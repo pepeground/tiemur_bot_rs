@@ -6,6 +6,8 @@ authors = ["Marat Safin <jeizsm@gmail.com>"]
 [dependencies]
 tokio-core = "0.1"
 futures = "0.1"
+hyper = "0.11"
+hyper-tls = "0.1"
 
 [dependencies.telegram-bot]
 git = "https://github.com/jeizsm/telegram-bot.git"

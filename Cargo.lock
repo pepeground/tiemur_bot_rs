@@ -3,6 +3,8 @@ name = "tiemur-bot-rs"
 version = "0.1.0"
 dependencies = [
  "futures 0.1.15 (registry+https://github.com/rust-lang/crates.io-index)",
+ "hyper 0.11.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "hyper-tls 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "telegram-bot 0.5.0 (git+https://github.com/jeizsm/telegram-bot.git?branch=feature/complex-requests)",
  "tokio-core 0.1.9 (registry+https://github.com/rust-lang/crates.io-index)",
 ]

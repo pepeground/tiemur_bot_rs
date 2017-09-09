@@ -1,9 +1,15 @@
 use telegram_bot::{Api, Message, MessageKind, CanReplySendMessage, CanGetFile};
 use tokio_core::reactor::Handle;
-use futures::Future;
+use futures::{Future, Stream};
 use std::env;
+use hyper::Client;
+use hyper::client::HttpConnector;
+use hyper_tls::HttpsConnector;
 
-pub fn process(message: Message, api: Api, handle: &Handle) {
+pub fn process(message: Message,
+               api: Api,
+               handle: &Handle,
+               client: Client<HttpsConnector<HttpConnector>>) {
     let clone = message.clone();
     match message.kind {
         MessageKind::Photo { ref data, .. } => {
@@ -14,7 +20,13 @@ pub fn process(message: Message, api: Api, handle: &Handle) {
                         .ok_or("No file path".to_owned())
                 })
                 .and_then(move |url| {
-                    api.send(clone.text_reply(url))
+                    client.get(url.parse().unwrap()).map_err(|e| e.to_string())
+                })
+                .and_then(|res| {
+                    res.body().concat2().map_err(|e| e.to_string())
+                })
+                .and_then(move |_| {
+                    api.send(clone.text_reply("get photo"))
                         .map_err(|e| e.to_string())
                 });
             handle.spawn({
