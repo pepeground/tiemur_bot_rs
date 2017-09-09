@@ -1,0 +1,14 @@
+[package]
+name = "tiemur-bot-rs"
+version = "0.1.0"
+authors = ["Marat Safin <jeizsm@gmail.com>"]
+
+[dependencies]
+tokio-core = "0.1"
+futures = "0.1"
+
+[dependencies.telegram-bot]
+git = "https://github.com/jeizsm/telegram-bot.git"
+branch="feature/complex-requests"
+default-features=false
+features=["hyper_connector"]
