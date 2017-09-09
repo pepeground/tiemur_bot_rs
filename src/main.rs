@@ -3,6 +3,8 @@ extern crate telegram_bot;
 extern crate tokio_core;
 extern crate hyper;
 extern crate hyper_tls;
+extern crate image;
+extern crate img_hash;
 
 mod message;
 
