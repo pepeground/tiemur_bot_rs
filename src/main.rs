@@ -19,7 +19,7 @@ fn main() {
 
     let future = api.stream().for_each(|update| {
         if let UpdateKind::Message(message) = update.kind {
-            process(message, &api)
+            process(message, api.clone(), &handle)
         }
         Ok(())
     });
