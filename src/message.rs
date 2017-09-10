@@ -9,8 +9,9 @@ use futures::{Future, Stream};
 use hyper::Client;
 use hyper::client::HttpConnector;
 use hyper_tls::HttpsConnector;
+use hyper::error::UriError;
 use img_hash::{ImageHash, HashType};
-use image::load_from_memory;
+use image::load_from_memory as load;
 use rocksdb::{DB, Options, IteratorMode};
 use chrono::{DateTime, NaiveDateTime, Utc, Duration};
 
@@ -39,15 +40,13 @@ pub fn process(message: Rc<Message>,
                     file.get_url(&env::var("TELEGRAM_TOKEN").unwrap())
                         .ok_or("No file path".to_owned())
                 })
+                .and_then(|url| url.parse().map_err(|e: UriError| e.to_string()))
                 .and_then(move |url| {
-                    client.get(url.parse().unwrap()).map_err(|e| e.to_string())
+                    client.get(url).map_err(|e| e.to_string())
                 })
                 .and_then(|res| res.body().concat2().map_err(|e| e.to_string()))
-                .and_then(|body| {
-                    let image = load_from_memory(&body[..]);
-                    let hash = ImageHash::hash(&image.unwrap(), 8, HashType::Gradient);
-                    Ok(hash)
-                })
+                .and_then(|body| load(&body[..]).map_err(|e| e.to_string()))
+                .and_then(|image| Ok(ImageHash::hash(&image, 8, HashType::Gradient)))
                 .and_then(move |hash| {
                     let bytes = &hash.bitv.to_bytes()[..];
                     let find = db.borrow()

@@ -36,7 +36,6 @@ fn main() {
     let db = match cfs {
         Ok(cfs) => {
             let cfs_str: Vec<_> = cfs.iter().map(|a| a.as_str()).collect();
-            println!("{:?}", cfs_str);
             DB::open_cf(&Options::default(), &db_path, &cfs_str).unwrap()
         }
         Err(_) => DB::open_default(&db_path).unwrap(),
