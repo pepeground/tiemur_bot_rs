@@ -3,7 +3,7 @@ use std::rc::Rc;
 use std::cell::RefCell;
 
 use telegram_bot::{Api, CanReplySendMessage, CanGetFile};
-use telegram_bot::types::{Message, MessageKind, Chat};
+use telegram_bot::types::{Message, MessageKind, Chat, MessageId, UserId};
 use tokio_core::reactor::Handle;
 use futures::{Future, Stream};
 use hyper::Client;
@@ -14,6 +14,14 @@ use img_hash::{ImageHash, HashType};
 use image::load_from_memory as load;
 use rocksdb::{DB, Options, IteratorMode};
 use chrono::{DateTime, NaiveDateTime, Utc, Duration};
+use bincode::{serialize, deserialize, Infinite};
+
+#[derive(Serialize, Deserialize)]
+struct ImageRow {
+    id: MessageId,
+    user_id: UserId,
+    date: i64,
+}
 
 pub fn process(message: Rc<Message>,
                api: Api,
@@ -21,6 +29,7 @@ pub fn process(message: Rc<Message>,
                client: Client<HttpsConnector<HttpConnector>>,
                db: Rc<RefCell<DB>>) {
     let clone = message.clone();
+    let clone1 = message.clone();
 
     let id = &message.chat.id().to_string();
     let cf_handle;
@@ -41,9 +50,7 @@ pub fn process(message: Rc<Message>,
                         .ok_or("No file path".to_owned())
                 })
                 .and_then(|url| url.parse().map_err(|e: UriError| e.to_string()))
-                .and_then(move |url| {
-                    client.get(url).map_err(|e| e.to_string())
-                })
+                .and_then(move |url| client.get(url).map_err(|e| e.to_string()))
                 .and_then(|res| res.body().concat2().map_err(|e| e.to_string()))
                 .and_then(|body| load(&body[..]).map_err(|e| e.to_string()))
                 .and_then(|image| Ok(ImageHash::hash(&image, 8, HashType::Gradient)))
@@ -54,16 +61,21 @@ pub fn process(message: Rc<Message>,
                         .unwrap()
                         .find(|&(ref key, ref _value)| key.as_ref() == bytes);
                     match find {
-                        Some(a) => Ok(a),
+                        Some((_key, value)) => {
+                            let row: ImageRow = deserialize(&*value).unwrap();
+                            Ok(row)
+                        }
                         None => {
-                            let _ = db.borrow().put_cf(cf, bytes, b"value");
-                            Err("new record".to_owned())
+                            let row = build_row(clone);
+                            let value = serialize(&row, Infinite).unwrap();
+                            let _ = db.borrow().put_cf(cf, bytes, &value);
+                            Err("new record".to_string())
                         }
                     }
                 })
-                .and_then(move |_record| {
-                    let text = build_respone(clone.clone());
-                    api.send(clone.text_reply(text))
+                .and_then(move |record| {
+                    let text = build_respone(record, &clone1.chat);
+                    api.send(clone1.text_reply(text))
                         .map_err(|e| e.to_string())
                 });
             handle.spawn({
@@ -74,20 +86,25 @@ pub fn process(message: Rc<Message>,
     }
 }
 
+fn build_row(message: Rc<Message>) -> ImageRow {
+    let user = message.from.clone().unwrap();
+    ImageRow {
+        id: message.id,
+        user_id: user.id,
+        date: message.date,
+    }
+}
 
-fn build_respone(message: Rc<Message>) -> String {
-    let first_name: &str = match message.from.as_ref() {
-        Some(from) => &from.first_name,
-        None => "",
-    };
+fn build_respone(image_record: ImageRow, chat: &Chat) -> String {
+    let first_name = image_record.user_id;
 
-    let naive_time = NaiveDateTime::from_timestamp(message.date, 0);
+    let naive_time = NaiveDateTime::from_timestamp(image_record.date, 0);
     let message_time = DateTime::<Utc>::from_utc(naive_time, Utc);
     let now = Utc::now();
     let diff = now.signed_duration_since(message_time);
     let time_ago = distance_of_time_in_words(diff);
 
-    let username = match message.chat {
+    let username = match *chat {
         Chat::Supergroup(ref supergroup) => supergroup.username.as_ref(),
         _ => None,
     };
@@ -98,7 +115,7 @@ fn build_respone(message: Rc<Message>) -> String {
                     time_ago,
                     first_name,
                     username,
-                    message.id)
+                    image_record.id)
         }
         None => {
             format!("Ебать ты Темур! It happened {}, author: {}",
