@@ -2,8 +2,8 @@ use std::env;
 use std::rc::Rc;
 use std::cell::RefCell;
 
-use telegram_bot::{Api,CanForwardMessage, CanReplySendMessage, CanGetFile, ToChatRef};
-use telegram_bot::types::{Message, MessageKind,  Chat,  ChatRef};
+use telegram_bot::{Api, CanReplySendMessage, CanGetFile};
+use telegram_bot::types::{Message, MessageKind, Chat};
 use tokio_core::reactor::Handle;
 use futures::{Future, Stream};
 use hyper::Client;
@@ -63,10 +63,7 @@ pub fn process(message: Rc<Message>,
                     }
                 })
                 .and_then(move |_record| {
-                    let (text, chat_ref) = build_text(clone.clone());
-                    if let Some(chat_ref) = chat_ref {
-                        api.spawn(clone.forward(chat_ref))
-                    }
+                    let text = build_respone(clone.clone());
                     api.send(clone.text_reply(text))
                         .map_err(|e| e.to_string())
                 });
@@ -79,7 +76,7 @@ pub fn process(message: Rc<Message>,
 }
 
 
-fn build_text(message: Rc<Message>) -> (String, Option<ChatRef>) {
+fn build_respone(message: Rc<Message>) -> String {
     let first_name: &str = match message.from.as_ref() {
         Some(from) => &from.first_name,
         None => "",
@@ -96,24 +93,18 @@ fn build_text(message: Rc<Message>) -> (String, Option<ChatRef>) {
         _ => None,
     };
 
-    let id = match message.chat {
-        Chat::Supergroup(ref supergroup) => Some(supergroup.id.to_chat_ref()),
-        Chat::Group(ref group) => Some(group.id.to_chat_ref()),
-        _ => None,
-    };
-
     match username {
         Some(ref username) => {
-            (format!("Ебать ты Темур! It happened {}, author: {} Proof: https://t.me/{}/{}",
+            format!("Ебать ты Темур! It happened {}, author: {} Proof: https://t.me/{}/{}",
                     time_ago,
                     first_name,
                     username,
-                    message.id), None)
+                    message.id)
         }
         None => {
-            (format!("Ебать ты Темур! It happened {}, author: {}",
+            format!("Ебать ты Темур! It happened {}, author: {}",
                     time_ago,
-                    first_name), id)
+                    first_name)
         }
     }
 }
