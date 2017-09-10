@@ -1,11 +1,11 @@
 use chrono::{DateTime, NaiveDateTime, Utc, Duration};
 use telegram_bot::types::Chat;
-use types::Image;
+use types::{Image, User};
 
-pub fn build(image_record: Image, chat: &Chat) -> String {
-    let first_name = image_record.user_id;
+pub fn build(image: &Image, user: &User, chat: &Chat) -> String {
+    let first_name = &user.first_name;
 
-    let naive_time = NaiveDateTime::from_timestamp(image_record.date, 0);
+    let naive_time = NaiveDateTime::from_timestamp(image.date, 0);
     let message_time = DateTime::<Utc>::from_utc(naive_time, Utc);
     let now = Utc::now();
     let diff = now.signed_duration_since(message_time);
@@ -22,7 +22,7 @@ pub fn build(image_record: Image, chat: &Chat) -> String {
                     time_ago,
                     first_name,
                     username,
-                    image_record.id)
+                    image.id)
         }
         None => {
             format!("Ебать ты Темур! It happened {}, author: {}",
