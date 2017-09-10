@@ -12,6 +12,7 @@ extern crate serde_derive;
 extern crate bincode;
 
 mod message;
+mod types;
 
 use std::env;
 use futures::Stream;
