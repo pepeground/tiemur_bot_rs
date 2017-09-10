@@ -10,6 +10,8 @@ hyper = "0.11"
 hyper-tls = "0.1"
 img_hash = "2.0"
 image = "0.13"
+rocksdb = "0.8"
+chrono = "0.4"
 
 [dependencies.telegram-bot]
 git = "https://github.com/jeizsm/telegram-bot.git"
