@@ -1,8 +1,8 @@
 use chrono::{DateTime, NaiveDateTime, Utc, Duration};
 use telegram_bot::types::Chat;
-use types::{Image, User};
+use types::{Image, UserContent};
 
-pub fn build(image: &Image, user: &User, chat: &Chat) -> String {
+pub fn build(image: &Image, user: &UserContent, chat: &Chat) -> String {
     let first_name = &user.first_name;
 
     let naive_time = NaiveDateTime::from_timestamp(image.date, 0);

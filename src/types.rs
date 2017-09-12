@@ -1,5 +1,6 @@
 use telegram_bot::types::{UserId, MessageId};
 use telegram_bot::types::User as TUser;
+use std::cmp::Ordering;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Image {
@@ -19,9 +20,10 @@ impl Image {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct User {
-    #[serde(skip, default="Hack::hack")]
-    pub id: UserId,
+pub struct User(pub UserId, pub UserContent);
+
+#[derive(Serialize, Deserialize, Debug, Eq)]
+pub struct UserContent {
     pub first_name: String,
     pub last_name: Option<String>,
     pub username: Option<String>,
@@ -30,22 +32,30 @@ pub struct User {
 
 impl From<TUser> for User {
     fn from(user: TUser) -> Self {
-        User {
-            id: user.id,
+        let content = UserContent {
             first_name: user.first_name,
             last_name: user.last_name,
             username: user.username,
             count: 0
-        }
+        };
+        User(user.id, content)
     }
 }
 
-trait Hack {
-    fn hack() -> Self;
+impl Ord for UserContent {
+    fn cmp(&self, user: &UserContent) -> Ordering {
+        self.count.cmp(&user.count)
+    }
 }
 
-impl Hack for UserId {
-    fn hack() -> Self {
-        0.into()
+impl PartialOrd for UserContent {
+    fn partial_cmp(&self, user: &UserContent) -> Option<Ordering> {
+        self.count.partial_cmp(&user.count)
+    }
+}
+
+impl PartialEq for UserContent {
+    fn eq(&self, other: &UserContent) -> bool {
+        self.count == other.count
     }
 }
