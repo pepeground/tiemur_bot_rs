@@ -36,7 +36,7 @@ impl From<TUser> for User {
             first_name: user.first_name,
             last_name: user.last_name,
             username: user.username,
-            count: 0
+            count: 0,
         };
         User(user.id, content)
     }
