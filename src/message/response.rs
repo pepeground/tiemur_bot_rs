@@ -52,9 +52,9 @@ fn distance_of_time_in_words(diff: Duration) -> String {
 }
 
 
-pub fn find_tiemur(user_db: TypedDBWithCF<UserId, UserContent>,
-                   image_db: TypedDBWithCF<Vec<u8>, Image>,
-                   hash: ImageHash,
+pub fn find_tiemur(user_db: &TypedDBWithCF<UserId, UserContent>,
+                   image_db: &TypedDBWithCF<Vec<u8>, Image>,
+                   hash: &ImageHash,
                    message: Rc<Message>)
                    -> Result<(Rc<Message>, Image, UserContent), Error> {
     let bytes = hash.bitv.to_bytes();
