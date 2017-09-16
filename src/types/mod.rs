@@ -1,8 +1,10 @@
+mod error;
+pub use self::error::Error;
+
 use std::cmp::Ordering;
 use std::marker::PhantomData;
-use telegram_bot::types::{UserId, MessageId};
-use telegram_bot::types::User as TUser;
-use rocksdb::{DB, ColumnFamily, Error, IteratorMode, DBIterator};
+use telegram_bot::types::{UserId, MessageId, User as TUser};
+use rocksdb::{DB, ColumnFamily, IteratorMode, DBIterator, Error as RocksdbError};
 use bincode::{serialize, deserialize, Infinite};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -85,19 +87,19 @@ impl<'a, K, V> TypedDBWithCF<'a, K, V>
         }
     }
 
-    pub fn put(&self, key: &K, value: &V) -> Result<(), Error> {
+    pub fn put(&self, key: &K, value: &V) -> Result<(), RocksdbError> {
         let key = serialize(key, Infinite).unwrap();
         let value = serialize(value, Infinite).unwrap();
         self.db.put_cf(self.cf, &key, &value)
     }
 
-    pub fn get(&self, key: &K) -> Result<Option<V>, Error> {
+    pub fn get(&self, key: &K) -> Result<Option<V>, RocksdbError> {
         let key = serialize(&key, Infinite).unwrap();
         let value = self.db.get_cf(self.cf, &key);
         value.map(|a| a.map(|b| deserialize(&b).unwrap()))
     }
 
-    pub fn iterator(&self, mode: IteratorMode) -> Result<TypedIterator<K, V>, Error> {
+    pub fn iterator(&self, mode: IteratorMode) -> Result<TypedIterator<K, V>, RocksdbError> {
         self.db.iterator_cf(self.cf, mode).map(|a| TypedIterator::new(a))
     }
 }

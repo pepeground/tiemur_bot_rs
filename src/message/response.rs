@@ -2,7 +2,7 @@ use std::collections::BinaryHeap;
 use std::rc::Rc;
 use chrono::{DateTime, NaiveDateTime, Utc, Duration};
 use telegram_bot::types::{Chat, UserId, Message};
-use types::{Image, User, UserContent, TypedDBWithCF};
+use types::{Image, User, UserContent, TypedDBWithCF, Error};
 use rocksdb::IteratorMode;
 use img_hash::ImageHash;
 
@@ -56,7 +56,7 @@ pub fn find_tiemur(user_db: TypedDBWithCF<UserId, UserContent>,
                    image_db: TypedDBWithCF<Vec<u8>, Image>,
                    hash: ImageHash,
                    message: Rc<Message>)
-                   -> Result<(Rc<Message>, Image, UserContent), String> {
+                   -> Result<(Rc<Message>, Image, UserContent), Error> {
     let bytes = hash.bitv.to_bytes();
     let find = image_db.iterator(IteratorMode::End)
         .unwrap()
@@ -78,7 +78,7 @@ pub fn find_tiemur(user_db: TypedDBWithCF<UserId, UserContent>,
         None => {
             let image = Image::new(message.id, user.0, message.date);
             let _ = image_db.put(&bytes, &image);
-            Err("new record".to_string())
+            Err("new record".to_string().into())
         }
     }
 }

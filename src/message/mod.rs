@@ -11,11 +11,10 @@ use futures::{Future, Stream};
 use hyper::Client;
 use hyper::client::HttpConnector;
 use hyper_tls::HttpsConnector;
-use hyper::error::UriError;
 use img_hash::{ImageHash, HashType};
 use image::load_from_memory as load;
 use rocksdb::{DB, Options, ColumnFamily};
-use types::TypedDBWithCF;
+use types::{TypedDBWithCF, Error};
 
 pub fn process(message: Rc<Message>,
                api: Api,
@@ -32,15 +31,15 @@ pub fn process(message: Rc<Message>,
     match message.kind {
         MessageKind::Photo { ref data, .. } => {
             let future = api.send(data[0].get_file())
-                .map_err(|e| e.to_string())
+                .map_err(|e| -> Error { e.into() })
                 .and_then(|file| {
                     file.get_url(&env::var("TELEGRAM_TOKEN").unwrap())
-                        .ok_or("No file path".to_string())
+                        .ok_or("No file path".to_string().into())
                 })
-                .and_then(|url| url.parse().map_err(|e: UriError| e.to_string()))
-                .and_then(move |url| client.get(url).map_err(|e| e.to_string()))
-                .and_then(|res| res.body().concat2().map_err(|e| e.to_string()))
-                .and_then(|body| load(&body[..]).map_err(|e| e.to_string()))
+                .and_then(|url| url.parse().map_err(From::from))
+                .and_then(move |url| client.get(url).map_err(From::from))
+                .and_then(|res| res.body().concat2().map_err(From::from))
+                .and_then(|body| load(&body[..]).map_err(From::from))
                 .and_then(|image| Ok(ImageHash::hash(&image, 8, HashType::Gradient)))
                 .and_then(move |hash| {
                     let borrow = db.borrow();
@@ -50,11 +49,10 @@ pub fn process(message: Rc<Message>,
                 })
                 .and_then(move |(message, image, user)| {
                     let text = response::build(&image, &user, &message.chat);
-                    api.send(message.text_reply(text))
-                        .map_err(|e| e.to_string())
+                    api.send(message.text_reply(text)).map_err(From::from)
                 });
             handle.spawn({
-                future.map_err(|_| ()).map(|_| ())
+                future.map_err(|_: Error| ()).map(|_| ())
             })
         }
         MessageKind::Text { ref data, .. } => {
@@ -64,8 +62,7 @@ pub fn process(message: Rc<Message>,
                 "/tiemur_stats" |
                 "/tiemur_stats@TiemurBot" => {
                     let text = response::top_tiemurs(user_db);
-                    let future = api.send(message_clone.text_reply(text))
-                        .map_err(|e| e.to_string());
+                    let future = api.send(message_clone.text_reply(text));
                     handle.spawn({
                         future.map_err(|_| ()).map(|_| ())
                     })
