@@ -7,6 +7,7 @@ extern crate image;
 extern crate img_hash;
 extern crate rocksdb;
 extern crate chrono;
+extern crate serde;
 #[macro_use]
 extern crate serde_derive;
 extern crate bincode;

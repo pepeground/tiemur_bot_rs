@@ -3,7 +3,6 @@ mod response;
 use std::env;
 use std::rc::Rc;
 use std::cell::RefCell;
-use std::collections::BinaryHeap;
 
 use telegram_bot::{Api, CanReplySendMessage, CanGetFile};
 use telegram_bot::types::{Message, MessageKind};
@@ -15,10 +14,8 @@ use hyper_tls::HttpsConnector;
 use hyper::error::UriError;
 use img_hash::{ImageHash, HashType};
 use image::load_from_memory as load;
-use rocksdb::{DB, Options, IteratorMode, ColumnFamily};
-use bincode::{serialize, deserialize, Infinite};
-
-use types::{Image, User, UserContent};
+use rocksdb::{DB, Options, ColumnFamily};
+use types::TypedDBWithCF;
 
 pub fn process(message: Rc<Message>,
                api: Api,
@@ -46,11 +43,13 @@ pub fn process(message: Rc<Message>,
                 .and_then(|body| load(&body[..]).map_err(|e| e.to_string()))
                 .and_then(|image| Ok(ImageHash::hash(&image, 8, HashType::Gradient)))
                 .and_then(move |hash| {
-                    let tiemur = find_tiemur(&db.borrow(), hash, user_cf, image_cf, message_clone);
-                    tiemur
+                    let borrow = db.borrow();
+                    let image_db = TypedDBWithCF::new(&borrow, image_cf);
+                    let user_db = TypedDBWithCF::new(&borrow, user_cf);
+                    response::find_tiemur(user_db, image_db, hash, message_clone)
                 })
                 .and_then(move |(message, image, user)| {
-                    let text = response::build(&image, &user, &message_clone.chat);
+                    let text = response::build(&image, &user, &message.chat);
                     api.send(message.text_reply(text))
                         .map_err(|e| e.to_string())
                 });
@@ -59,15 +58,12 @@ pub fn process(message: Rc<Message>,
             })
         }
         MessageKind::Text { ref data, .. } => {
+            let borrow = db.borrow();
+            let user_db = TypedDBWithCF::new(&borrow, user_cf);
             match data.as_ref() {
                 "/tiemur_stats" |
                 "/tiemur_stats@TiemurBot" => {
-                    let mut users: BinaryHeap<_> = db.borrow()
-                        .iterator_cf(user_cf, IteratorMode::End)
-                        .unwrap()
-                        .map(|(_key, value)| -> UserContent { deserialize(&*value).unwrap() })
-                        .collect();
-                    let text = users.pop().map_or("".to_string(), |a| a.first_name);
+                    let text = response::top_tiemurs(user_db);
                     let future = api.send(message_clone.text_reply(text))
                         .map_err(|e| e.to_string());
                     handle.spawn({
@@ -85,43 +81,5 @@ fn db_handle(db: &mut DB, cf_name: &str) -> ColumnFamily {
     match db.cf_handle(cf_name) {
         Some(cf) => cf,
         None => db.create_cf(cf_name, &Options::default()).unwrap(),
-    }
-}
-
-fn find_tiemur(db: &DB,
-               hash: ImageHash,
-               user_cf: ColumnFamily,
-               image_cf: ColumnFamily,
-               message: Rc<Message>)
-               -> Result<(Rc<Message>, Image, UserContent), String> {
-    let bytes = &hash.bitv.to_bytes()[..];
-    let find = db.iterator_cf(image_cf, IteratorMode::End)
-        .unwrap()
-        .find(|&(ref key, ref _value)| key.as_ref() == bytes);
-    let telegram_user = message.from.clone().ok_or("user empty".to_string())?;
-    let mut user: User = telegram_user.into();
-    let key = serialize(&user.0, Infinite).unwrap();
-    let user_row = db.get_cf(user_cf, &key).unwrap();
-    if user_row.is_none() {
-        let value = serialize(&user.1, Infinite).unwrap();
-        let _ = db.put_cf(user_cf, &key, &value);
-    }
-    match find {
-        Some((_key, value)) => {
-            let image: Image = deserialize(&*value).unwrap();
-            if let Some(user_row) = user_row {
-                let row: UserContent = deserialize(&*user_row).unwrap();
-                user.1 = UserContent { count: row.count + 1, ..user.1 };
-                let value = serialize(&user.1, Infinite).unwrap();
-                let _ = db.put_cf(user_cf, &key, &value);
-            }
-            Ok((message, image, user.1))
-        }
-        None => {
-            let image = Image::new(message.id, user.0, message.date);
-            let value = serialize(&image, Infinite).unwrap();
-            let _ = db.put_cf(image_cf, bytes, &value);
-            Err("new record".to_string())
-        }
     }
 }
