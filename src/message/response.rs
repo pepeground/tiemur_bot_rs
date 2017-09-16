@@ -130,6 +130,17 @@ pub fn top_tiemurs(db: Rc<RefCell<DB>>,
         .map(|(_key, value)| value)
         .collect();
     let top = vec![users.pop(), users.pop(), users.pop(), users.pop(), users.pop()];
-    let text: String = top.into_iter().map(|u| u.map_or("".to_string(), |u| u.first_name)).collect();
+    let mut text = "Топ Темуров:".to_string();
+    for user in top {
+        match user {
+            Some(u) => {
+                text.push_str("\n");
+                text.push_str(&u.first_name);
+                text.push_str(" => ");
+                text.push_str(&u.count.to_string());
+            }
+            _ => (),
+        }
+    }
     api.send(message.text_reply(text))
 }
