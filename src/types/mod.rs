@@ -103,7 +103,7 @@ impl<'a, K, V> TypedDBWithCF<'a, K, V>
     }
 
     pub fn iterator(&self, mode: IteratorMode) -> Result<TypedIterator<K, V>, Error> {
-        self.db.iterator_cf(self.cf, mode).map(|a| TypedIterator::new(a)).map_err(From::from)
+        Ok(TypedIterator::new(self.db.iterator_cf(self.cf, mode)?))
     }
 }
 
