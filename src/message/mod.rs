@@ -9,15 +9,14 @@ use telegram_bot::types::{Message, MessageKind};
 use tokio_core::reactor::Handle;
 use futures::Future;
 use hyper::Client;
-use hyper::client::HttpConnector;
-use hyper_tls::HttpsConnector;
+use hyper_rustls::HttpsConnector;
 use rocksdb::{DB, Options, ColumnFamily};
 use types::Error;
 
 pub fn process(message: Rc<Message>,
                api: Api,
                handle: &Handle,
-               client: Client<HttpsConnector<HttpConnector>>,
+               client: Client<HttpsConnector>,
                db: Rc<RefCell<DB>>)
                -> Result<(), Error> {
     let message_clone = message.clone();
@@ -33,7 +32,7 @@ pub fn process(message: Rc<Message>,
                 .map_err(|e| -> Error { e.into() })
                 .and_then(|file| {
                     file.get_url(&env::var("TELEGRAM_TOKEN").unwrap())
-                        .ok_or(Error::StringError("No file path".to_string()))
+                        .ok_or("No file path".to_string().into())
                 })
                 .and_then(move |url| {
                     response::detect_tiemur(url, client, db, image_cf, user_cf, message_clone, api)

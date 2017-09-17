@@ -7,7 +7,7 @@ authors = ["Marat Safin <jeizsm@gmail.com>"]
 tokio-core = "0.1"
 futures = "0.1"
 hyper = "0.11"
-hyper-tls = "0.1"
+hyper-rustls = "0.9"
 img_hash = "2.0"
 image = "0.13"
 rocksdb = "0.8"
@@ -17,9 +17,10 @@ serde_derive = "1.0"
 bincode = "0.8"
 log = "0.3"
 env_logger = "0.4"
+error-chain = "0.11"
 
 [dependencies.telegram-bot]
 git = "https://github.com/jeizsm/telegram-bot.git"
 branch="feature/complex-requests"
 default-features=false
-features=["hyper_connector"]
+features=["rustls_connector"]

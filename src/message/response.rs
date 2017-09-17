@@ -9,15 +9,14 @@ use types::{Image, User, UserContent, TypedDBWithCF, Error};
 use rocksdb::{IteratorMode, DB, ColumnFamily};
 use img_hash::{ImageHash, HashType};
 use hyper::Client;
-use hyper::client::HttpConnector;
 use hyper::error::UriError;
-use hyper_tls::HttpsConnector;
+use hyper_rustls::HttpsConnector;
 use futures::{Future, IntoFuture, Stream};
 use futures::future::err;
 use image::load_from_memory;
 
 pub fn detect_tiemur(url: String,
-                     client: Client<HttpsConnector<HttpConnector>>,
+                     client: Client<HttpsConnector>,
                      db: Rc<RefCell<DB>>,
                      image_cf: ColumnFamily,
                      user_cf: ColumnFamily,
@@ -52,7 +51,7 @@ fn find_tiemur(user_db: &TypedDBWithCF<UserId, UserContent>,
     let bytes = hash.bitv.to_bytes();
     let find = image_db.iterator(IteratorMode::End)?
         .find(|&(ref key, ref _value)| key == &bytes);
-    let telegram_user = message.from.clone().ok_or(Error::StringError("user empty".to_string()))?;
+    let telegram_user = message.from.clone().ok_or("user empty".to_string())?;
     let mut user: User = telegram_user.into();
     let user_row = user_db.get(&user.0)?;
     if user_row.is_none() {
@@ -69,7 +68,7 @@ fn find_tiemur(user_db: &TypedDBWithCF<UserId, UserContent>,
         None => {
             let image = Image::new(message.id, user.0, message.date);
             let _ = image_db.put(&bytes, &image);
-            Err(Error::StringError("new record".to_string()))
+            Err("new record".to_string().into())
         }
     }
 }

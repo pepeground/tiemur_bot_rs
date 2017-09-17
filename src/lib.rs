@@ -2,7 +2,7 @@ extern crate futures;
 extern crate telegram_bot;
 extern crate tokio_core;
 extern crate hyper;
-extern crate hyper_tls;
+extern crate hyper_rustls;
 extern crate image;
 extern crate img_hash;
 extern crate rocksdb;
@@ -14,6 +14,8 @@ extern crate bincode;
 #[macro_use]
 extern crate log;
 extern crate env_logger;
+#[macro_use]
+extern crate error_chain;
 
 mod message;
 pub mod types;
@@ -23,7 +25,7 @@ use futures::Stream;
 use tokio_core::reactor::Core;
 use telegram_bot::{Api, UpdateKind};
 use hyper::Client;
-use hyper_tls::HttpsConnector;
+use hyper_rustls::HttpsConnector;
 use message::process;
 use rocksdb::{DB, Options};
 use std::rc::Rc;
@@ -38,7 +40,7 @@ pub fn start() {
     let handle = core.handle();
     let api = Api::configure(token.as_str()).build(&handle);
     let client = Client::configure()
-        .connector(HttpsConnector::new(4, &handle).unwrap())
+        .connector(HttpsConnector::new(4, &handle))
         .build(&handle);
 
     let cfs = DB::list_cf(&Options::default(), &db_path);
