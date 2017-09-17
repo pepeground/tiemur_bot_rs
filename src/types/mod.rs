@@ -4,8 +4,8 @@ pub use self::error::Error;
 use std::cmp::Ordering;
 use std::marker::PhantomData;
 use telegram_bot::types::{UserId, MessageId, User as TUser};
-use rocksdb::{DB, ColumnFamily, IteratorMode, DBIterator, Error as RocksdbError};
-use bincode::{serialize, deserialize, Infinite};
+use rocksdb::{DB, ColumnFamily, IteratorMode, DBIterator};
+use bincode::{serialize, deserialize, Infinite, ErrorKind};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
@@ -87,20 +87,23 @@ impl<'a, K, V> TypedDBWithCF<'a, K, V>
         }
     }
 
-    pub fn put(&self, key: &K, value: &V) -> Result<(), RocksdbError> {
-        let key = serialize(key, Infinite).unwrap();
-        let value = serialize(value, Infinite).unwrap();
-        self.db.put_cf(self.cf, &key, &value)
+    pub fn put(&self, key: &K, value: &V) -> Result<(), Error> {
+        let key = serialize(key, Infinite)?;
+        let value = serialize(value, Infinite)?;
+        self.db.put_cf(self.cf, &key, &value).map_err(From::from)
     }
 
-    pub fn get(&self, key: &K) -> Result<Option<V>, RocksdbError> {
-        let key = serialize(&key, Infinite).unwrap();
-        let value = self.db.get_cf(self.cf, &key);
-        value.map(|a| a.map(|b| deserialize(&b).unwrap()))
+    pub fn get(&self, key: &K) -> Result<Option<V>, Error> {
+        let key = serialize(&key, Infinite)?;
+        let value = self.db.get_cf(self.cf, &key)?;
+        match value {
+            Some(value) => Ok(Some(deserialize(&value)?)),
+            None => Ok(None),
+        }
     }
 
-    pub fn iterator(&self, mode: IteratorMode) -> Result<TypedIterator<K, V>, RocksdbError> {
-        self.db.iterator_cf(self.cf, mode).map(|a| TypedIterator::new(a))
+    pub fn iterator(&self, mode: IteratorMode) -> Result<TypedIterator<K, V>, Error> {
+        self.db.iterator_cf(self.cf, mode).map(|a| TypedIterator::new(a)).map_err(From::from)
     }
 }
 
@@ -119,12 +122,12 @@ impl<K, V> TypedIterator<K, V> {
         }
     }
 
-    fn convert((k, v): (Box<[u8]>, Box<[u8]>)) -> (K, V)
+    fn convert((k, v): (Box<[u8]>, Box<[u8]>)) -> (Result<K, Box<ErrorKind>>, Result<V, Box<ErrorKind>>)
         where K: DeserializeOwned,
               V: DeserializeOwned
     {
-        let key = deserialize(&*k).unwrap();
-        let value = deserialize(&*v).unwrap();
+        let key = deserialize(&*k);
+        let value = deserialize(&*v);
         (key, value)
     }
 }
@@ -135,6 +138,12 @@ impl<K, V> Iterator for TypedIterator<K, V>
 {
     type Item = (K, V);
     fn next(&mut self) -> Option<Self::Item> {
-        self.db_iterator.next().map(Self::convert)
+        let tuple = self.db_iterator.next().map(Self::convert);
+        match tuple {
+            Some((Ok(key), Ok(value))) => Some((key, value)),
+            Some((Err(_key), __)) => None,
+            Some((_, Err(_value))) => None,
+            None => None,
+        }
     }
 }

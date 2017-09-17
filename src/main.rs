@@ -11,6 +11,9 @@ extern crate serde;
 #[macro_use]
 extern crate serde_derive;
 extern crate bincode;
+#[macro_use]
+extern crate log;
+extern crate env_logger;
 
 mod message;
 mod types;
@@ -27,6 +30,7 @@ use std::rc::Rc;
 use std::cell::RefCell;
 
 fn main() {
+    let _ = env_logger::init().unwrap();
     let token = env::var("TELEGRAM_TOKEN").unwrap();
     let db_path = env::var("DB_PATH").unwrap();
 
@@ -55,7 +59,7 @@ fn main() {
                     api.clone(),
                     &handle,
                     client.clone(),
-                    rc_db.clone())
+                    rc_db.clone()).map_err(|e| e.to_string())?
         }
         Ok(())
     });
