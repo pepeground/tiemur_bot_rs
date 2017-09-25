@@ -5,21 +5,19 @@ use std::cell::RefCell;
 use chrono::{DateTime, NaiveDateTime, Utc, Duration};
 use telegram_bot::{Api, CanReplySendMessage, TelegramFuture};
 use telegram_bot::types::{Chat, UserId, Message};
-use types::{Image, User, UserContent, TypedDBWithCF, Error};
-use rocksdb::{IteratorMode, DB, ColumnFamily};
+use types::{ImageData, User, UserData, TypedDBWithCF, Error};
 use img_hash::{ImageHash, HashType};
 use hyper::Client;
 use hyper::error::UriError;
 use hyper_rustls::HttpsConnector;
 use futures::{Future, IntoFuture, Stream};
-use futures::future::err;
 use image::load_from_memory;
+use sled::Tree;
 
 pub fn detect_tiemur(url: String,
                      client: Client<HttpsConnector>,
-                     db: Rc<RefCell<DB>>,
-                     image_cf: ColumnFamily,
-                     user_cf: ColumnFamily,
+                     image_db: Rc<RefCell<Tree>>,
+                     user_db: Rc<RefCell<Tree>>,
                      message: Rc<Message>,
                      api: Api)
                      -> Box<Future<Item = Message, Error = Error>> {
@@ -31,9 +29,10 @@ pub fn detect_tiemur(url: String,
         .and_then(|ref body| load_from_memory(body).map_err(From::from))
         .and_then(|ref image| Ok(ImageHash::hash(image, 8, HashType::Gradient)))
         .and_then(move |ref hash| {
-            let borrow = db.borrow();
-            let image_db = TypedDBWithCF::new(&borrow, image_cf);
-            let user_db = TypedDBWithCF::new(&borrow, user_cf);
+            let user_borrow = user_db.borrow();
+            let image_borrow = image_db.borrow();
+            let image_db = TypedDBWithCF::new(&image_borrow);
+            let user_db = TypedDBWithCF::new(&user_borrow);
             find_tiemur(&user_db, &image_db, hash, message)
         })
         .and_then(move |(ref message, ref image, ref user)| {
@@ -43,13 +42,13 @@ pub fn detect_tiemur(url: String,
     Box::new(future)
 }
 
-fn find_tiemur(user_db: &TypedDBWithCF<UserId, UserContent>,
-               image_db: &TypedDBWithCF<Vec<u8>, Image>,
+fn find_tiemur(user_db: &TypedDBWithCF<UserId, UserData>,
+               image_db: &TypedDBWithCF<Vec<u8>, ImageData>,
                hash: &ImageHash,
                message: Rc<Message>)
-               -> Result<(Rc<Message>, Image, UserContent), Error> {
+               -> Result<(Rc<Message>, ImageData, UserData), Error> {
     let bytes = hash.bitv.to_bytes();
-    let find = image_db.iterator(IteratorMode::End)?
+    let find = image_db.iter()
         .find(|&(ref key, ref _value)| key == &bytes);
     let telegram_user = message.from.clone().ok_or("user empty".to_string())?;
     let mut user: User = telegram_user.into();
@@ -60,20 +59,20 @@ fn find_tiemur(user_db: &TypedDBWithCF<UserId, UserContent>,
     match find {
         Some((_key, image)) => {
             if let Some(user_row) = user_row {
-                user.1 = UserContent { count: user_row.count + 1, ..user.1 };
+                user.1 = UserData { count: user_row.count + 1, ..user.1 };
                 let _ = user_db.put(&user.0, &user.1);
             }
             Ok((message, image, user.1))
         }
         None => {
-            let image = Image::new(message.id, user.0, message.date);
+            let image = ImageData::new(message.id, user.0, message.date);
             let _ = image_db.put(&bytes, &image);
             Err("new record".to_string().into())
         }
     }
 }
 
-fn build(image: &Image, user: &UserContent, chat: &Chat) -> String {
+fn build(image: &ImageData, user: &UserData, chat: &Chat) -> String {
     let first_name = &user.first_name;
 
     let naive_time = NaiveDateTime::from_timestamp(image.date, 0);
@@ -118,17 +117,10 @@ fn distance_of_time_in_words(diff: Duration) -> String {
     }
 }
 
-pub fn top_tiemurs(db: Rc<RefCell<DB>>,
-                   user_cf: ColumnFamily,
-                   api: Api,
-                   message: Rc<Message>)
-                   -> TelegramFuture<Message> {
-    let borrow = db.borrow();
-    let user_db = TypedDBWithCF::<UserId, UserContent>::new(&borrow, user_cf);
-    let iterator = match user_db.iterator(IteratorMode::End) {
-        Ok(iterator) => iterator,
-        Err(e) => return TelegramFuture::new(Box::new(err(e.to_string().into()))),
-    };
+pub fn top_tiemurs(user_db: Rc<RefCell<Tree>>, api: Api, message: Rc<Message>) -> TelegramFuture<Message> {
+    let borrow = user_db.borrow();
+    let user_db = TypedDBWithCF::<UserId, UserData>::new(&borrow);
+    let iterator = user_db.iter();
     let mut users: BinaryHeap<_> = iterator.map(|(_key, value)| value)
         .collect();
     let top = vec![users.pop(), users.pop(), users.pop(), users.pop(), users.pop()];

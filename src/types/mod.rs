@@ -4,21 +4,21 @@ pub use self::error::Error;
 use std::cmp::Ordering;
 use std::marker::PhantomData;
 use telegram_bot::types::{UserId, MessageId, User as TUser};
-use rocksdb::{DB, ColumnFamily, IteratorMode, DBIterator};
 use bincode::{serialize, deserialize, Infinite, ErrorKind};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
+use sled::{Tree, TreeIter};
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct Image {
+pub struct ImageData {
     pub id: MessageId,
     pub user_id: UserId,
     pub date: i64,
 }
 
-impl Image {
-    pub fn new(id: MessageId, user_id: UserId, date: i64) -> Image {
-        Image {
+impl ImageData {
+    pub fn new(id: MessageId, user_id: UserId, date: i64) -> Self {
+        Self {
             id: id,
             user_id: user_id,
             date: date,
@@ -27,10 +27,10 @@ impl Image {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct User(pub UserId, pub UserContent);
+pub struct User(pub UserId, pub UserData);
 
 #[derive(Serialize, Deserialize, Debug, Eq)]
-pub struct UserContent {
+pub struct UserData {
     pub first_name: String,
     pub last_name: Option<String>,
     pub username: Option<String>,
@@ -39,7 +39,7 @@ pub struct UserContent {
 
 impl From<TUser> for User {
     fn from(user: TUser) -> Self {
-        let content = UserContent {
+        let content = UserData {
             first_name: user.first_name,
             last_name: user.last_name,
             username: user.username,
@@ -49,27 +49,26 @@ impl From<TUser> for User {
     }
 }
 
-impl Ord for UserContent {
-    fn cmp(&self, user: &UserContent) -> Ordering {
+impl Ord for UserData {
+    fn cmp(&self, user: &UserData) -> Ordering {
         self.count.cmp(&user.count)
     }
 }
 
-impl PartialOrd for UserContent {
-    fn partial_cmp(&self, user: &UserContent) -> Option<Ordering> {
+impl PartialOrd for UserData {
+    fn partial_cmp(&self, user: &UserData) -> Option<Ordering> {
         self.count.partial_cmp(&user.count)
     }
 }
 
-impl PartialEq for UserContent {
-    fn eq(&self, other: &UserContent) -> bool {
+impl PartialEq for UserData {
+    fn eq(&self, other: &UserData) -> bool {
         self.count == other.count
     }
 }
 
 pub struct TypedDBWithCF<'a, K, V> {
-    db: &'a DB,
-    cf: ColumnFamily,
+    db: &'a Tree,
     phantom_key: PhantomData<K>,
     phantom_value: PhantomData<V>,
 }
@@ -78,10 +77,9 @@ impl<'a, K, V> TypedDBWithCF<'a, K, V>
     where K: Serialize,
           V: Serialize + DeserializeOwned
 {
-    pub fn new(db: &'a DB, cf: ColumnFamily) -> Self {
+    pub fn new(db: &'a Tree) -> Self {
         TypedDBWithCF {
             db: db,
-            cf: cf,
             phantom_key: PhantomData,
             phantom_value: PhantomData,
         }
@@ -90,31 +88,35 @@ impl<'a, K, V> TypedDBWithCF<'a, K, V>
     pub fn put(&self, key: &K, value: &V) -> Result<(), Error> {
         let key = serialize(key, Infinite)?;
         let value = serialize(value, Infinite)?;
-        self.db.put_cf(self.cf, &key, &value).map_err(From::from)
+        Ok(self.db.set(key, value))
     }
 
     pub fn get(&self, key: &K) -> Result<Option<V>, Error> {
         let key = serialize(&key, Infinite)?;
-        let value = self.db.get_cf(self.cf, &key)?;
+        let value = self.db.get(&key);
         match value {
             Some(value) => Ok(Some(deserialize(&value)?)),
             None => Ok(None),
         }
     }
 
-    pub fn iterator(&self, mode: IteratorMode) -> Result<TypedIterator<K, V>, Error> {
-        Ok(TypedIterator::new(self.db.iterator_cf(self.cf, mode)?))
+    pub fn iter(&self) -> TypedIterator<'a, K, V> {
+        TypedIterator::new(self.db.iter())
+    }
+
+    pub fn scan(&self, key: &[u8]) -> TypedIterator<'a, K, V> {
+        TypedIterator::new(self.db.scan(key))
     }
 }
 
-pub struct TypedIterator<K, V> {
-    db_iterator: DBIterator,
+pub struct TypedIterator<'a, K, V> {
+    db_iterator: TreeIter<'a>,
     phantom_key: PhantomData<K>,
     phantom_value: PhantomData<V>,
 }
 
-impl<K, V> TypedIterator<K, V> {
-    pub fn new(iterator: DBIterator) -> Self {
+impl<'a, K, V> TypedIterator<'a, K, V> {
+    pub fn new(iterator: TreeIter<'a>) -> Self {
         TypedIterator {
             db_iterator: iterator,
             phantom_key: PhantomData,
@@ -122,17 +124,17 @@ impl<K, V> TypedIterator<K, V> {
         }
     }
 
-    fn convert((k, v): (Box<[u8]>, Box<[u8]>)) -> (Result<K, Box<ErrorKind>>, Result<V, Box<ErrorKind>>)
+    fn convert((k, v): (Vec<u8>, Vec<u8>)) -> (Result<K, Box<ErrorKind>>, Result<V, Box<ErrorKind>>)
         where K: DeserializeOwned,
               V: DeserializeOwned
     {
-        let key = deserialize(&*k);
-        let value = deserialize(&*v);
+        let key = deserialize(&k);
+        let value = deserialize(&v);
         (key, value)
     }
 }
 
-impl<K, V> Iterator for TypedIterator<K, V>
+impl<'a, K, V> Iterator for TypedIterator<'a, K, V>
     where K: DeserializeOwned,
           V: DeserializeOwned
 {

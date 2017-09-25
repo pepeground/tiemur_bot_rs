@@ -1,26 +1,15 @@
 extern crate tiemur_bot_rs;
-extern crate rocksdb;
+extern crate sled;
 
-use tiemur_bot_rs::types::{UserContent, TypedDBWithCF};
-use rocksdb::{DB, Options};
+use tiemur_bot_rs::types::{UserData, TypedDBWithCF};
+use sled::Config;
 
 #[test]
 fn test() {
-    let db_path = "/tmp/test_tiemur_bot_db";
-    let cfs = DB::list_cf(&Options::default(), &db_path);
-    let mut db = match cfs {
-        Ok(cfs) => {
-            let cfs_str: Vec<_> = cfs.iter().map(|a| a.as_str()).collect();
-            DB::open_cf(&Options::default(), &db_path, &cfs_str).unwrap()
-        }
-        Err(_) => DB::open_default(&db_path).unwrap(),
-    };
-    let user_cf = match db.cf_handle("user") {
-        Some(cf) => cf,
-        None => db.create_cf("user", &Options::default()).unwrap(),
-    };
-    let user_db = TypedDBWithCF::<i64, UserContent>::new(&db, user_cf);
-    let user = UserContent {
+    let db_path = "/tmp/test_tiemur_bot_db/test".to_string();
+    let user_db = Config::default().path(db_path).tree();
+    let user_db = TypedDBWithCF::<i64, UserData>::new(&user_db);
+    let user = UserData {
         first_name: "Test".to_string(),
         last_name: None,
         username: None,

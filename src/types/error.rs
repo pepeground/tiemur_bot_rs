@@ -1,6 +1,5 @@
 error_chain! {
     foreign_links {
-        RocksdbError(::rocksdb::Error);
         HyperUriError(::hyper::error::UriError);
         HyperError(::hyper::Error);
         ImageError(::image::ImageError);
