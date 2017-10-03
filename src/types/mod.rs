@@ -1,13 +1,34 @@
 mod error;
-pub use self::error::Error;
+pub use self::error::{Error, ErrorKind};
 
 use std::cmp::Ordering;
 use std::marker::PhantomData;
-use telegram_bot::types::{UserId, MessageId, User as TUser};
-use bincode::{serialize, deserialize, Infinite, ErrorKind};
+use telegram_bot::types::{UserId, ChatId, MessageId, User};
+use bincode::{serialize, deserialize, Infinite};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use sled::{Tree, TreeIter};
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ImageKey {
+    pub chat_id: ChatId,
+    pub bytes: Vec<u8>,
+}
+
+impl ImageKey {
+    pub fn new(chat_id: ChatId, bytes: Vec<u8>) -> Self {
+        Self {
+            chat_id: chat_id,
+            bytes: bytes,
+        }
+    }
+}
+
+impl From<ChatId> for ImageKey {
+    fn from(chat_id: ChatId) -> Self {
+        Self::new(chat_id, Vec::new())
+    }
+}
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ImageData {
@@ -27,7 +48,27 @@ impl ImageData {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct User(pub UserId, pub UserData);
+pub struct UserKey {
+    pub chat_id: ChatId,
+    // pub count: i64,
+    pub user_id: Option<UserId>,
+}
+
+impl UserKey {
+    pub fn new(id: ChatId, user_id: Option<UserId>) -> Self {
+        Self {
+            chat_id: id,
+            // count: count,
+            user_id: user_id,
+        }
+    }
+}
+
+impl From<ChatId> for UserKey {
+    fn from(chat_id: ChatId) -> Self {
+        Self::new(chat_id, None)
+    }
+}
 
 #[derive(Serialize, Deserialize, Debug, Eq)]
 pub struct UserData {
@@ -37,15 +78,14 @@ pub struct UserData {
     pub count: i64,
 }
 
-impl From<TUser> for User {
-    fn from(user: TUser) -> Self {
-        let content = UserData {
+impl From<User> for UserData {
+    fn from(user: User) -> Self {
+        UserData {
             first_name: user.first_name,
             last_name: user.last_name,
             username: user.username,
             count: 0,
-        };
-        User(user.id, content)
+        }
     }
 }
 
@@ -100,6 +140,19 @@ impl<'a, K, V> TypedDBWithCF<'a, K, V>
         }
     }
 
+    pub fn cas(&self, key: &K, old: Option<&V>, new: Option<&V>) -> Result<(), Option<Error>> {
+        let key = serialize(key, Infinite).map_err(|e| -> Error { e.into() })?;
+        let old = match old {
+            Some(value) => Some(serialize(value, Infinite).map_err(|e| -> Error { e.into() })?),
+            None => None,
+        };
+        let new = match new {
+            Some(value) => Some(serialize(value, Infinite).map_err(|e| -> Error { e.into() })?),
+            None => None,
+        };
+        self.db.cas(key, old, new).map_err(|e| e.map(|a| ErrorKind::CasError(a).into()))
+    }
+
     pub fn iter(&self) -> TypedIterator<'a, K, V> {
         TypedIterator::new(self.db.iter())
     }
@@ -124,12 +177,12 @@ impl<'a, K, V> TypedIterator<'a, K, V> {
         }
     }
 
-    fn convert((k, v): (Vec<u8>, Vec<u8>)) -> (Result<K, Box<ErrorKind>>, Result<V, Box<ErrorKind>>)
+    fn convert((k, v): (Vec<u8>, Vec<u8>)) -> (Result<K, Error>, Result<V, Error>)
         where K: DeserializeOwned,
               V: DeserializeOwned
     {
-        let key = deserialize(&k);
-        let value = deserialize(&v);
+        let key = deserialize(&k).map_err(|e| e.into());
+        let value = deserialize(&v).map_err(|e| e.into());
         (key, value)
     }
 }

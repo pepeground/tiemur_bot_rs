@@ -20,6 +20,7 @@ pub fn process(message: Rc<Message>,
                user_db: Rc<RefCell<Tree>>,
                image_db: Rc<RefCell<Tree>>) {
     let message_clone = message.clone();
+    response::insert_new_chat(&message, &image_db.borrow(), &user_db.borrow());
 
     match message.kind {
         MessageKind::Photo { ref data, .. } => {

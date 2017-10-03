@@ -4,8 +4,8 @@ use std::cell::RefCell;
 
 use chrono::{DateTime, NaiveDateTime, Utc, Duration};
 use telegram_bot::{Api, CanReplySendMessage, TelegramFuture};
-use telegram_bot::types::{Chat, UserId, Message};
-use types::{ImageData, User, UserData, TypedDBWithCF, Error};
+use telegram_bot::types::{Chat, Message};
+use types::{ImageKey, ImageData, UserKey, UserData, TypedDBWithCF, Error};
 use img_hash::{ImageHash, HashType};
 use hyper::Client;
 use hyper::error::UriError;
@@ -13,6 +13,16 @@ use hyper_rustls::HttpsConnector;
 use futures::{Future, IntoFuture, Stream};
 use image::load_from_memory;
 use sled::Tree;
+
+type ImageDB<'a> = TypedDBWithCF<'a, ImageKey, Option<ImageData>>;
+type UserDB<'a> = TypedDBWithCF<'a, UserKey, Option<UserData>>;
+
+pub fn insert_new_chat(message: &Message, image_db: &Tree, user_db: &Tree) {
+    let key: ImageKey = message.chat.id().into();
+    let _ = ImageDB::new(&image_db).cas(&key, None, Some(&None));
+    let key: UserKey = message.chat.id().into();
+    let _ = UserDB::new(&user_db).cas(&key, None, Some(&None));
+}
 
 pub fn detect_tiemur(url: String,
                      client: Client<HttpsConnector>,
@@ -31,8 +41,8 @@ pub fn detect_tiemur(url: String,
         .and_then(move |ref hash| {
             let user_borrow = user_db.borrow();
             let image_borrow = image_db.borrow();
-            let image_db = TypedDBWithCF::new(&image_borrow);
-            let user_db = TypedDBWithCF::new(&user_borrow);
+            let image_db = ImageDB::new(&image_borrow);
+            let user_db = UserDB::new(&user_borrow);
             find_tiemur(&user_db, &image_db, hash, message)
         })
         .and_then(move |(ref message, ref image, ref user)| {
@@ -42,31 +52,34 @@ pub fn detect_tiemur(url: String,
     Box::new(future)
 }
 
-fn find_tiemur(user_db: &TypedDBWithCF<UserId, UserData>,
-               image_db: &TypedDBWithCF<Vec<u8>, ImageData>,
+fn find_tiemur(user_db: &UserDB,
+               image_db: &ImageDB,
                hash: &ImageHash,
                message: Rc<Message>)
                -> Result<(Rc<Message>, ImageData, UserData), Error> {
     let bytes = hash.bitv.to_bytes();
     let find = image_db.iter()
-        .find(|&(ref key, ref _value)| key == &bytes);
+        .find(|&(ref key, ref _value)| &key.bytes == &bytes);
     let telegram_user = message.from.clone().ok_or("user empty".to_string())?;
-    let mut user: User = telegram_user.into();
-    let user_row = user_db.get(&user.0)?;
+    let user_id = telegram_user.id;
+    let user_key = UserKey::new(message.chat.id(), Some(user_id));
+    let mut user_data: Option<UserData> = Some(telegram_user.into());
+    let user_row = user_db.get(&user_key)?;
     if user_row.is_none() {
-        let _ = user_db.put(&user.0, &user.1);
+        let _ = user_db.put(&user_key, &user_data);
     }
     match find {
-        Some((_key, image)) => {
-            if let Some(user_row) = user_row {
-                user.1 = UserData { count: user_row.count + 1, ..user.1 };
-                let _ = user_db.put(&user.0, &user.1);
+        Some((_key, Some(image))) => {
+            if let Some(Some(user_row)) = user_row {
+                user_data.as_mut().unwrap().count = user_row.count + 1;
+                let _ = user_db.put(&user_key, &user_data);
             }
-            Ok((message, image, user.1))
+            Ok((message, image, user_data.unwrap()))
         }
-        None => {
-            let image = ImageData::new(message.id, user.0, message.date);
-            let _ = image_db.put(&bytes, &image);
+        Some((_, None)) | None => {
+            let image = ImageData::new(message.id, user_id, message.date);
+            let key = ImageKey::new(message.chat.id(), bytes);
+            let _ = image_db.put(&key, &Some(image));
             Err("new record".to_string().into())
         }
     }
@@ -119,7 +132,7 @@ fn distance_of_time_in_words(diff: Duration) -> String {
 
 pub fn top_tiemurs(user_db: Rc<RefCell<Tree>>, api: Api, message: Rc<Message>) -> TelegramFuture<Message> {
     let borrow = user_db.borrow();
-    let user_db = TypedDBWithCF::<UserId, UserData>::new(&borrow);
+    let user_db = UserDB::new(&borrow);
     let iterator = user_db.iter();
     let mut users: BinaryHeap<_> = iterator.map(|(_key, value)| value)
         .collect();
@@ -127,7 +140,7 @@ pub fn top_tiemurs(user_db: Rc<RefCell<Tree>>, api: Api, message: Rc<Message>) -
     let mut text = "Топ Темуров:".to_string();
     for user in top {
         match user {
-            Some(u) => {
+            Some(Some(u)) => {
                 text.push_str("\n");
                 text.push_str(&u.first_name);
                 text.push_str(" => ");
