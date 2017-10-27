@@ -5,7 +5,7 @@ use std::cell::RefCell;
 use chrono::{DateTime, NaiveDateTime, Utc, Duration};
 use telegram_bot::{Api, CanReplySendMessage, TelegramFuture};
 use telegram_bot::types::{Chat, Message};
-use types::{ImageKey, ImageData, UserKey, UserData, TypedDBWithCF, Error};
+use types::{ImageKey, ImageData, UserKey, UserData, TypedDB, Error};
 use img_hash::{ImageHash, HashType};
 use hyper::Client;
 use hyper::error::UriError;
@@ -14,8 +14,8 @@ use futures::{Future, IntoFuture, Stream};
 use image::load_from_memory;
 use sled::Tree;
 
-type ImageDB<'a> = TypedDBWithCF<'a, ImageKey, Option<ImageData>>;
-type UserDB<'a> = TypedDBWithCF<'a, UserKey, Option<UserData>>;
+type ImageDB<'a> = TypedDB<'a, ImageKey, Option<ImageData>>;
+type UserDB<'a> = TypedDB<'a, UserKey, Option<UserData>>;
 
 pub fn insert_new_chat(message: &Message, image_db: &Tree, user_db: &Tree) {
     let key: ImageKey = message.chat.id().into();
@@ -62,24 +62,24 @@ fn find_tiemur(user_db: &UserDB,
         .find(|&(ref key, ref _value)| &key.bytes == &bytes);
     let telegram_user = message.from.clone().ok_or("user empty".to_string())?;
     let user_id = telegram_user.id;
-    let user_key = UserKey::new(message.chat.id(), Some(user_id));
-    let mut user_data: Option<UserData> = Some(telegram_user.into());
-    let user_row = user_db.get(&user_key)?;
-    if user_row.is_none() {
-        let _ = user_db.put(&user_key, &user_data);
-    }
     match find {
         Some((_key, Some(image))) => {
-            if let Some(Some(user_row)) = user_row {
-                user_data.as_mut().unwrap().count = user_row.count + 1;
-                let _ = user_db.put(&user_key, &user_data);
-            }
+            let user_key = UserKey::new(message.chat.id(), Some(user_id));
+            let mut user_data: Option<UserData> = Some(telegram_user.into());
+            user_data = match user_db.cas(&user_key, None, Some(&user_data)) {
+                Err(Some(Some(user_row))) => {
+                    user_data.as_mut().unwrap().count = user_row.count + 1;
+                    let _ = user_db.set(&user_key, &user_data);
+                    user_data
+                }
+                Ok(_) | Err(_) => user_data,
+            };
             Ok((message, image, user_data.unwrap()))
         }
         Some((_, None)) | None => {
             let image = ImageData::new(message.id, user_id, message.date);
             let key = ImageKey::new(message.chat.id(), bytes);
-            let _ = image_db.put(&key, &Some(image));
+            image_db.set(&key, &Some(image));
             Err("new record".to_string().into())
         }
     }

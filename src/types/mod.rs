@@ -50,7 +50,6 @@ impl ImageData {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct UserKey {
     pub chat_id: ChatId,
-    // pub count: i64,
     pub user_id: Option<UserId>,
 }
 
@@ -58,7 +57,6 @@ impl UserKey {
     pub fn new(id: ChatId, user_id: Option<UserId>) -> Self {
         Self {
             chat_id: id,
-            // count: count,
             user_id: user_id,
         }
     }
@@ -84,7 +82,7 @@ impl From<User> for UserData {
             first_name: user.first_name,
             last_name: user.last_name,
             username: user.username,
-            count: 0,
+            count: 1,
         }
     }
 }
@@ -107,50 +105,46 @@ impl PartialEq for UserData {
     }
 }
 
-pub struct TypedDBWithCF<'a, K, V> {
+pub struct TypedDB<'a, K, V> {
     db: &'a Tree,
     phantom_key: PhantomData<K>,
     phantom_value: PhantomData<V>,
 }
 
-impl<'a, K, V> TypedDBWithCF<'a, K, V>
+impl<'a, K, V> TypedDB<'a, K, V>
     where K: Serialize,
           V: Serialize + DeserializeOwned
 {
     pub fn new(db: &'a Tree) -> Self {
-        TypedDBWithCF {
+        Self {
             db: db,
             phantom_key: PhantomData,
             phantom_value: PhantomData,
         }
     }
 
-    pub fn put(&self, key: &K, value: &V) -> Result<(), Error> {
-        let key = serialize(key, Infinite)?;
-        let value = serialize(value, Infinite)?;
-        Ok(self.db.set(key, value))
+    pub fn set(&self, key: &K, value: &V) {
+        let key = serialize(key, Infinite).unwrap();
+        let value = serialize(value, Infinite).unwrap();
+        self.db.set(key, value)
     }
 
-    pub fn get(&self, key: &K) -> Result<Option<V>, Error> {
-        let key = serialize(&key, Infinite)?;
-        let value = self.db.get(&key);
-        match value {
-            Some(value) => Ok(Some(deserialize(&value)?)),
-            None => Ok(None),
-        }
+    pub fn get(&self, key: &K) -> Option<V> {
+        let key = serialize(&key, Infinite).unwrap();
+        self.db.get(&key).map(|a| deserialize(&a).unwrap())
     }
 
-    pub fn cas(&self, key: &K, old: Option<&V>, new: Option<&V>) -> Result<(), Option<Error>> {
-        let key = serialize(key, Infinite).map_err(|e| -> Error { e.into() })?;
+    pub fn cas(&self, key: &K, old: Option<&V>, new: Option<&V>) -> Result<(), Option<V>> {
+        let key = serialize(key, Infinite).unwrap();
         let old = match old {
-            Some(value) => Some(serialize(value, Infinite).map_err(|e| -> Error { e.into() })?),
+            Some(value) => Some(serialize(value, Infinite).unwrap()),
             None => None,
         };
         let new = match new {
-            Some(value) => Some(serialize(value, Infinite).map_err(|e| -> Error { e.into() })?),
+            Some(value) => Some(serialize(value, Infinite).unwrap()),
             None => None,
         };
-        self.db.cas(key, old, new).map_err(|e| e.map(|a| ErrorKind::CasError(a).into()))
+        self.db.cas(key, old, new).map_err(|e| e.map(|a| deserialize(&a).unwrap()))
     }
 
     pub fn iter(&self) -> TypedIterator<'a, K, V> {
