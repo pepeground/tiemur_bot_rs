@@ -151,8 +151,9 @@ impl<'a, K, V> TypedDB<'a, K, V>
         TypedIterator::new(self.db.iter())
     }
 
-    pub fn scan(&self, key: &[u8]) -> TypedIterator<'a, K, V> {
-        TypedIterator::new(self.db.scan(key))
+    pub fn scan(&self, key: &K) -> TypedIterator<'a, K, V> {
+        let key = serialize(key, Infinite).unwrap();
+        TypedIterator::new(self.db.scan(&key))
     }
 }
 

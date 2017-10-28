@@ -18,10 +18,9 @@ type ImageDB<'a> = TypedDB<'a, ImageKey, Option<ImageData>>;
 type UserDB<'a> = TypedDB<'a, UserKey, Option<UserData>>;
 
 pub fn insert_new_chat(message: &Message, image_db: &Tree, user_db: &Tree) {
-    let key: ImageKey = message.chat.id().into();
-    let _ = ImageDB::new(&image_db).cas(&key, None, Some(&None));
-    let key: UserKey = message.chat.id().into();
-    let _ = UserDB::new(&user_db).cas(&key, None, Some(&None));
+    let chat_id = message.chat.id();
+    let _ = ImageDB::new(&image_db).cas(&chat_id.into(), None, Some(&None));
+    let _ = UserDB::new(&user_db).cas(&chat_id.into(), None, Some(&None));
 }
 
 pub fn detect_tiemur(url: String,
@@ -58,13 +57,15 @@ fn find_tiemur(user_db: &UserDB,
                message: Rc<Message>)
                -> Result<(Rc<Message>, ImageData, UserData), Error> {
     let bytes = hash.bitv.to_bytes();
-    let find = image_db.iter()
+    let chat_id = message.chat.id();
+    let find = image_db.scan(&chat_id.into())
+        .take_while(|&(ref key, ref _value)| &key.chat_id == &chat_id)
         .find(|&(ref key, ref _value)| &key.bytes == &bytes);
     let telegram_user = message.from.clone().ok_or("user empty".to_string())?;
     let user_id = telegram_user.id;
     match find {
         Some((_key, Some(image))) => {
-            let user_key = UserKey::new(message.chat.id(), Some(user_id));
+            let user_key = UserKey::new(chat_id, Some(user_id));
             let mut user_data: Option<UserData> = Some(telegram_user.into());
             user_data = match user_db.cas(&user_key, None, Some(&user_data)) {
                 Err(Some(Some(user_row))) => {
@@ -78,7 +79,7 @@ fn find_tiemur(user_db: &UserDB,
         }
         Some((_, None)) | None => {
             let image = ImageData::new(message.id, user_id, message.date);
-            let key = ImageKey::new(message.chat.id(), bytes);
+            let key = ImageKey::new(chat_id, bytes);
             image_db.set(&key, &Some(image));
             Err("new record".to_string().into())
         }
@@ -133,8 +134,10 @@ fn distance_of_time_in_words(diff: Duration) -> String {
 pub fn top_tiemurs(user_db: Rc<RefCell<Tree>>, api: Api, message: Rc<Message>) -> TelegramFuture<Message> {
     let borrow = user_db.borrow();
     let user_db = UserDB::new(&borrow);
-    let iterator = user_db.iter();
-    let mut users: BinaryHeap<_> = iterator.map(|(_key, value)| value)
+    let chat_id = message.chat.id();
+    let mut users: BinaryHeap<_> = user_db.scan(&chat_id.into())
+        .take_while(|&(ref key, ref _value)| &key.chat_id == &chat_id)
+        .map(|(_key, value)| value)
         .collect();
     let top = vec![users.pop(), users.pop(), users.pop(), users.pop(), users.pop()];
     let mut text = "Топ Темуров:".to_string();
