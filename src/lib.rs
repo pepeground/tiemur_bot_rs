@@ -32,8 +32,9 @@ use std::rc::Rc;
 use std::cell::RefCell;
 use sled::Config;
 
+#[cfg_attr(feature = "cargo-clippy", allow(clone_on_ref_ptr))]
 pub fn start() {
-    let _ = env_logger::init().unwrap();
+    env_logger::init().unwrap();
     let token = env::var("TELEGRAM_TOKEN").unwrap();
     let db_path = env::var("SLED_DB").unwrap();
 
@@ -58,12 +59,14 @@ pub fn start() {
     let future = api.stream().for_each(|update| {
         if let UpdateKind::Message(message) = update.kind {
             let rc_message = Rc::new(message);
-            process(rc_message,
-                    api.clone(),
-                    &handle,
-                    client.clone(),
-                    ref_user_db.clone(),
-                    ref_image_db.clone())
+            process(
+                &rc_message,
+                api.clone(),
+                &handle,
+                client.clone(),
+                ref_user_db.clone(),
+                ref_image_db.clone(),
+            )
         }
         Ok(())
     });

@@ -112,8 +112,9 @@ pub struct TypedDB<'a, K, V> {
 }
 
 impl<'a, K, V> TypedDB<'a, K, V>
-    where K: Serialize,
-          V: Serialize + DeserializeOwned
+where
+    K: Serialize,
+    V: Serialize + DeserializeOwned,
 {
     pub fn new(db: &'a Tree) -> Self {
         Self {
@@ -144,7 +145,9 @@ impl<'a, K, V> TypedDB<'a, K, V>
             Some(value) => Some(serialize(value, Infinite).unwrap()),
             None => None,
         };
-        self.db.cas(key, old, new).map_err(|e| e.map(|a| deserialize(&a).unwrap()))
+        self.db.cas(key, old, new).map_err(|e| {
+            e.map(|a| deserialize(&a).unwrap())
+        })
     }
 
     pub fn iter(&self) -> TypedIterator<'a, K, V> {
@@ -173,8 +176,9 @@ impl<'a, K, V> TypedIterator<'a, K, V> {
     }
 
     fn convert((k, v): (Vec<u8>, Vec<u8>)) -> (Result<K, Error>, Result<V, Error>)
-        where K: DeserializeOwned,
-              V: DeserializeOwned
+    where
+        K: DeserializeOwned,
+        V: DeserializeOwned,
     {
         let key = deserialize(&k).map_err(|e| e.into());
         let value = deserialize(&v).map_err(|e| e.into());
@@ -183,8 +187,9 @@ impl<'a, K, V> TypedIterator<'a, K, V> {
 }
 
 impl<'a, K, V> Iterator for TypedIterator<'a, K, V>
-    where K: DeserializeOwned,
-          V: DeserializeOwned
+where
+    K: DeserializeOwned,
+    V: DeserializeOwned,
 {
     type Item = (K, V);
     fn next(&mut self) -> Option<Self::Item> {

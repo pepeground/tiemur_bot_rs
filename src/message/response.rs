@@ -19,24 +19,27 @@ type UserDB<'a> = TypedDB<'a, UserKey, Option<UserData>>;
 
 pub fn insert_new_chat(message: &Message, image_db: &Tree, user_db: &Tree) {
     let chat_id = message.chat.id();
-    let _ = ImageDB::new(&image_db).cas(&chat_id.into(), None, Some(&None));
-    let _ = UserDB::new(&user_db).cas(&chat_id.into(), None, Some(&None));
+    let _ = ImageDB::new(image_db).cas(&chat_id.into(), None, Some(&None));
+    let _ = UserDB::new(user_db).cas(&chat_id.into(), None, Some(&None));
 }
 
-pub fn detect_tiemur(url: String,
-                     client: Client<HttpsConnector>,
-                     image_db: Rc<RefCell<Tree>>,
-                     user_db: Rc<RefCell<Tree>>,
-                     message: Rc<Message>,
-                     api: Api)
-                     -> Box<Future<Item = Message, Error = Error>> {
+pub fn detect_tiemur(
+    url: &str,
+    client: Client<HttpsConnector>,
+    image_db: Rc<RefCell<Tree>>,
+    user_db: Rc<RefCell<Tree>>,
+    message: Rc<Message>,
+    api: Api,
+) -> Box<Future<Item = Message, Error = Error>> {
     let future = url.parse()
         .map_err(|e: UriError| -> Error { e.into() })
         .into_future()
         .and_then(move |url| client.get(url).map_err(From::from))
         .and_then(|res| res.body().concat2().map_err(From::from))
         .and_then(|ref body| load_from_memory(body).map_err(From::from))
-        .and_then(|ref image| Ok(ImageHash::hash(image, 8, HashType::Gradient)))
+        .and_then(|ref image| {
+            Ok(ImageHash::hash(image, 8, HashType::Gradient))
+        })
         .and_then(move |ref hash| {
             let user_borrow = user_db.borrow();
             let image_borrow = image_db.borrow();
@@ -51,17 +54,19 @@ pub fn detect_tiemur(url: String,
     Box::new(future)
 }
 
-fn find_tiemur(user_db: &UserDB,
-               image_db: &ImageDB,
-               hash: &ImageHash,
-               message: Rc<Message>)
-               -> Result<(Rc<Message>, ImageData, UserData), Error> {
+fn find_tiemur(
+    user_db: &UserDB,
+    image_db: &ImageDB,
+    hash: &ImageHash,
+    message: Rc<Message>,
+) -> Result<(Rc<Message>, ImageData, UserData), Error> {
     let bytes = hash.bitv.to_bytes();
     let chat_id = message.chat.id();
-    let find = image_db.scan(&chat_id.into())
-        .take_while(|&(ref key, ref _value)| &key.chat_id == &chat_id)
-        .find(|&(ref key, ref _value)| &key.bytes == &bytes);
-    let telegram_user = message.from.clone().ok_or("user empty".to_string())?;
+    let find = image_db
+        .scan(&chat_id.into())
+        .take_while(|&(ref key, ref _value)| key.chat_id == chat_id)
+        .find(|&(ref key, ref _value)| key.bytes == bytes);
+    let telegram_user = message.from.clone().ok_or_else(|| "user empty".to_string())?;
     let user_id = telegram_user.id;
     match find {
         Some((_key, Some(image))) => {
@@ -70,7 +75,7 @@ fn find_tiemur(user_db: &UserDB,
             user_data = match user_db.cas(&user_key, None, Some(&user_data)) {
                 Err(Some(Some(user_row))) => {
                     user_data.as_mut().unwrap().count = user_row.count + 1;
-                    let _ = user_db.set(&user_key, &user_data);
+                    user_db.set(&user_key, &user_data);
                     user_data
                 }
                 Ok(_) | Err(_) => user_data,
@@ -101,55 +106,68 @@ fn build(image: &ImageData, user: &UserData, chat: &Chat) -> String {
     };
 
     match username {
-        Some(ref username) => {
-            format!("Ебать ты Темур! It happened {}, author: {} Proof: https://t.me/{}/{}",
-                    time_ago,
-                    first_name,
-                    username,
-                    image.id)
+        Some(username) => {
+            format!(
+                "Ебать ты Темур! It happened {}, author: {} Proof: https://t.me/{}/{}",
+                time_ago,
+                first_name,
+                username,
+                image.id
+            )
         }
         None => {
-            format!("Ебать ты Темур! It happened {}, author: {}",
-                    time_ago,
-                    first_name)
+            format!(
+                "Ебать ты Темур! It happened {}, author: {}",
+                time_ago,
+                first_name
+            )
         }
     }
 }
 
 fn distance_of_time_in_words(diff: Duration) -> String {
-    let diff_num_tuple = (diff.num_weeks(), diff.num_days(), diff.num_hours(), diff.num_minutes());
+    let diff_num_tuple = (
+        diff.num_weeks(),
+        diff.num_days(),
+        diff.num_hours(),
+        diff.num_minutes(),
+    );
     match diff_num_tuple {
-        (0, 0, 0, 0) => format!("less than a minute"),
-        (0, 0, 0, 1) => format!("a minute ago"),
+        (0, 0, 0, 0) => "less than a minute".to_string(),
+        (0, 0, 0, 1) => "a minute ago".to_string(),
         (0, 0, 0, a) => format!("{} minutes ago", a),
-        (0, 0, 1, _) => format!("an hour ago"),
+        (0, 0, 1, _) => "an hour ago".to_string(),
         (0, 0, a, _) => format!("{} hours ago", a),
-        (0, 1, _, _) => format!("a day ago"),
+        (0, 1, _, _) => "a day ago".to_string(),
         (0, a, _, _) => format!("{} days ago", a),
-        (1, _, _, _) => format!("a week ago"),
+        (1, _, _, _) => "a week ago".to_string(),
         (a, _, _, _) => format!("{} weeks ago", a),
     }
 }
 
-pub fn top_tiemurs(user_db: Rc<RefCell<Tree>>, api: Api, message: Rc<Message>) -> TelegramFuture<Message> {
+pub fn top_tiemurs(user_db: &Rc<RefCell<Tree>>, api: &Api, message: &Message) -> TelegramFuture<Message> {
     let borrow = user_db.borrow();
     let user_db = UserDB::new(&borrow);
     let chat_id = message.chat.id();
-    let mut users: BinaryHeap<_> = user_db.scan(&chat_id.into())
-        .take_while(|&(ref key, ref _value)| &key.chat_id == &chat_id)
+    let mut users: BinaryHeap<_> = user_db
+        .scan(&chat_id.into())
+        .take_while(|&(ref key, ref _value)| key.chat_id == chat_id)
         .map(|(_key, value)| value)
         .collect();
-    let top = vec![users.pop(), users.pop(), users.pop(), users.pop(), users.pop()];
+    let top = vec![
+        users.pop(),
+        users.pop(),
+        users.pop(),
+        users.pop(),
+        users.pop(),
+    ];
     let mut text = "Топ Темуров:".to_string();
     for user in top {
-        match user {
-            Some(Some(u)) => {
-                text.push_str("\n");
-                text.push_str(&u.first_name);
-                text.push_str(" => ");
-                text.push_str(&u.count.to_string());
-            }
-            _ => (),
+        if let Some(Some(u)) = user {
+            text.push_str("\n");
+            text.push_str(&u.first_name);
+            text.push_str(" => ");
+            text.push_str(&u.count.to_string());
         }
     }
     api.send(message.text_reply(text))
