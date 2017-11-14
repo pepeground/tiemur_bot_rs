@@ -29,7 +29,6 @@ use hyper::Client;
 use hyper_rustls::HttpsConnector;
 use message::process;
 use std::rc::Rc;
-use std::cell::RefCell;
 use sled::Config;
 
 #[cfg_attr(feature = "cargo-clippy", allow(clone_on_ref_ptr))]
@@ -53,8 +52,8 @@ fn main() {
     path.push("user_db.db");
     let user_path = path.as_path().to_str().unwrap().to_string();
     let user_db = Config::default().path(user_path).tree();
-    let ref_user_db = Rc::new(RefCell::new(user_db));
-    let ref_image_db = Rc::new(RefCell::new(image_db));
+    let ref_user_db = Rc::new(user_db);
+    let ref_image_db = Rc::new(image_db);
 
     let future = api.stream().for_each(|update| {
         if let UpdateKind::Message(message) = update.kind {

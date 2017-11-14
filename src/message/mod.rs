@@ -2,7 +2,6 @@ mod response;
 
 use std::env;
 use std::rc::Rc;
-use std::cell::RefCell;
 
 use telegram_bot::{Api, CanGetFile};
 use telegram_bot::types::{Message, MessageKind, MessageEntityKind};
@@ -31,11 +30,11 @@ pub fn process(
     api: Api,
     handle: &Handle,
     client: Client<HttpsConnector>,
-    user_db: Rc<RefCell<Tree>>,
-    image_db: Rc<RefCell<Tree>>,
+    user_db: Rc<Tree>,
+    image_db: Rc<Tree>,
 ) {
     let message_clone = message.clone();
-    response::insert_new_chat(message, &image_db.borrow(), &user_db.borrow());
+    response::insert_new_chat(message, &image_db, &user_db);
 
     match message.kind {
         MessageKind::Photo { ref data, .. } => {
