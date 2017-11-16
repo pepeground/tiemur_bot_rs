@@ -33,8 +33,8 @@ pub fn detect_tiemur(
     let future = url.parse()
         .map_err(|e: UriError| -> Error { e.into() })
         .into_future()
-        .and_then(move |url| client.get(url).map_err(From::from))
-        .and_then(|res| res.body().concat2().map_err(From::from))
+        .and_then(move |url| client.get(url).from_err())
+        .and_then(|res| res.body().concat2().from_err())
         .and_then(|ref body| load_from_memory(body).map_err(From::from))
         .and_then(|ref image| {
             Ok(ImageHash::hash(image, 8, HashType::Gradient))
@@ -46,7 +46,7 @@ pub fn detect_tiemur(
         })
         .and_then(move |(ref message, ref image, ref user)| {
             let text = build(image, user, &message.chat);
-            api.send(message.text_reply(text)).map_err(From::from)
+            api.send(message.text_reply(text)).from_err()
         });
     Box::new(future)
 }

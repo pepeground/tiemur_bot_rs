@@ -22,12 +22,11 @@ pub mod types;
 
 use std::env;
 use std::path::Path;
-use futures::Stream;
+use futures::{Stream, Future, future};
 use tokio_core::reactor::Core;
 use telegram_bot::{Api, UpdateKind};
 use hyper::Client;
 use hyper_rustls::HttpsConnector;
-use message::process;
 use std::rc::Rc;
 use sled::Config;
 
@@ -58,14 +57,15 @@ fn main() {
     let future = api.stream().for_each(|update| {
         if let UpdateKind::Message(message) = update.kind {
             let rc_message = Rc::new(message);
-            process(
+            let process_message = message::process(
                 &rc_message,
                 api.clone(),
-                &handle,
                 client.clone(),
                 ref_user_db.clone(),
                 ref_image_db.clone(),
-            )
+            );
+            let select_all = future::select_all(process_message).map_err(|e| error!("{:?}", e.0)).map(|_| ());
+            handle.spawn(select_all);
         }
         Ok(())
     });

@@ -5,8 +5,7 @@ use std::rc::Rc;
 
 use telegram_bot::{Api, CanGetFile};
 use telegram_bot::types::{Message, MessageKind, MessageEntityKind};
-use tokio_core::reactor::Handle;
-use futures::Future;
+use futures::{Future, future};
 use hyper::Client;
 use hyper_rustls::HttpsConnector;
 use types::Error;
@@ -28,11 +27,10 @@ const EXTENSIONS: [&str; 9] = [
 pub fn process(
     message: &Rc<Message>,
     api: Api,
-    handle: &Handle,
     client: Client<HttpsConnector>,
     user_db: Rc<Tree>,
     image_db: Rc<Tree>,
-) {
+) -> Vec<Box<Future<Item = (), Error = Error>>> {
     let message_clone = message.clone();
     response::insert_new_chat(message, &image_db, &user_db);
 
@@ -46,17 +44,14 @@ pub fn process(
                 })
                 .and_then(move |url| {
                     response::detect_tiemur(&url, client, image_db, user_db, message_clone, api)
-                });
-            let future = Box::new(future);
-            handle.spawn({
-                future.map_err(|e| error!("{:?}", e)).map(|_| ())
-            })
+                }).map(|_| ());
+            vec![Box::new(future)]
         }
         MessageKind::Text {
             ref data,
             ref entities,
         } => {
-            entities.iter().for_each(|entity| match entity.kind {
+            entities.iter().map(|entity| match entity.kind {
                 MessageEntityKind::BotCommand => {
                     let command = data.chars()
                         .skip(entity.offset as usize)
@@ -65,12 +60,10 @@ pub fn process(
                     match command.as_ref() {
                         "/tiemur_stats" |
                         "/tiemur_stats@TiemurBot" => {
-                            let future = response::top_tiemurs(&user_db, &api, message);
-                            handle.spawn({
-                                future.map_err(|e| error!("{:?}", e)).map(|_| ())
-                            })
+                            let future = response::top_tiemurs(&user_db, &api, message).map(|_| ()).from_err();
+                            Box::new(future)
                         }
-                        _ => (),
+                        _ => Box::new(future::ok(())) as Box<Future<Item = _, Error = _>>
                     }
                 }
                 MessageEntityKind::Url => {
@@ -79,7 +72,7 @@ pub fn process(
                         .take(entity.length as usize)
                         .collect::<String>();
                     if !EXTENSIONS.iter().any(|&a| url.ends_with(a)) {
-                        return;
+                        return Box::new(future::ok(())) as Box<Future<Item = _, Error = _>>;
                     }
                     let future = response::detect_tiemur(
                         &url,
@@ -88,14 +81,12 @@ pub fn process(
                         user_db.clone(),
                         message_clone.clone(),
                         api.clone(),
-                    );
-                    handle.spawn({
-                        future.map_err(|e| error!("{:?}", e)).map(|_| ())
-                    })
+                    ).map(|_| ());
+                    Box::new(future)
                 }
-                _ => (),
-            })
+                _ => Box::new(future::ok(())) as Box<Future<Item = _, Error = _>>
+            }).collect()
         }
-        _ => (),
+        _ => vec![Box::new(future::ok(()))]
     }
 }
