@@ -744,7 +744,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 [[package]]
 name = "telegram-bot"
 version = "0.5.0"
-source = "git+https://github.com/jeizsm/telegram-bot.git?branch=feature/complex-requests#2286dc6139eaf802a7bbef15ea5f41853ea68b57"
+source = "git+https://github.com/jeizsm/telegram-bot.git?branch=feature/complex-requests#df350ffd9a2336f11ae0a5e8dd316fc6b7da7d14"
 dependencies = [
  "antidote 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "error-chain 0.11.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -758,7 +758,7 @@ dependencies = [
 [[package]]
 name = "telegram-bot-raw"
 version = "0.5.0"
-source = "git+https://github.com/jeizsm/telegram-bot.git?branch=feature/complex-requests#2286dc6139eaf802a7bbef15ea5f41853ea68b57"
+source = "git+https://github.com/jeizsm/telegram-bot.git?branch=feature/complex-requests#df350ffd9a2336f11ae0a5e8dd316fc6b7da7d14"
 dependencies = [
  "error-chain 0.11.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde 1.0.16 (registry+https://github.com/rust-lang/crates.io-index)",
