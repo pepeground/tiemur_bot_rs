@@ -2,9 +2,9 @@ use std::collections::BinaryHeap;
 use std::rc::Rc;
 
 use chrono::{DateTime, NaiveDateTime, Utc, Duration};
-use telegram_bot::{Api, CanReplySendMessage, TelegramFuture};
+use telegram_bot::{Api, CanReplySendMessage};
 use telegram_bot::types::{Chat, Message};
-use types::{ImageKey, ImageData, UserKey, UserData, TypedDB, Error};
+use types::{ImageKey, ImageData, UserKey, UserData, TypedDB, Error, TiemurFuture};
 use img_hash::{ImageHash, HashType};
 use hyper::Client;
 use hyper::error::UriError;
@@ -29,7 +29,7 @@ pub fn detect_tiemur(
     user_db: Rc<Tree>,
     message: Rc<Message>,
     api: Api,
-) -> Box<Future<Item = Message, Error = Error>> {
+) -> TiemurFuture<Message> {
     let future = url.parse()
         .map_err(|e: UriError| -> Error { e.into() })
         .into_future()
@@ -142,7 +142,7 @@ fn distance_of_time_in_words(diff: Duration) -> String {
     }
 }
 
-pub fn top_tiemurs(user_db: &Tree, api: &Api, message: &Message) -> TelegramFuture<Message> {
+pub fn top_tiemurs(user_db: &Tree, api: &Api, message: &Message) -> TiemurFuture<Message> {
     let user_db = UserDB::new(user_db);
     let chat_id = message.chat.id();
     let mut users: BinaryHeap<_> = user_db
@@ -166,5 +166,6 @@ pub fn top_tiemurs(user_db: &Tree, api: &Api, message: &Message) -> TelegramFutu
             text.push_str(&u.count.to_string());
         }
     }
-    api.send(message.text_reply(text))
+    let future = api.send(message.text_reply(text)).from_err();
+    Box::new(future)
 }

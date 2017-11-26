@@ -8,7 +8,7 @@ use telegram_bot::types::{Message, MessageKind, MessageEntityKind};
 use futures::{Future, future};
 use hyper::Client;
 use hyper_rustls::HttpsConnector;
-use types::Error;
+use types::{TiemurFuture, Error};
 use sled::Tree;
 
 const EXTENSIONS: [&str; 9] = [
@@ -30,7 +30,7 @@ pub fn process(
     client: Client<HttpsConnector>,
     user_db: Rc<Tree>,
     image_db: Rc<Tree>,
-) -> Vec<Box<Future<Item = (), Error = Error>>> {
+) -> Vec<TiemurFuture<()>> {
     let message_clone = message.clone();
     response::insert_new_chat(message, &image_db, &user_db);
 
@@ -63,7 +63,7 @@ pub fn process(
                             let future = response::top_tiemurs(&user_db, &api, message).map(|_| ()).from_err();
                             Box::new(future)
                         }
-                        _ => Box::new(future::ok(())) as Box<Future<Item = _, Error = _>>
+                        _ => Box::new(future::ok(())) as TiemurFuture<_>
                     }
                 }
                 MessageEntityKind::Url => {
@@ -72,7 +72,7 @@ pub fn process(
                         .take(entity.length as usize)
                         .collect::<String>();
                     if !EXTENSIONS.iter().any(|&a| url.ends_with(a)) {
-                        return Box::new(future::ok(())) as Box<Future<Item = _, Error = _>>;
+                        return Box::new(future::ok(())) as TiemurFuture<_>;
                     }
                     let future = response::detect_tiemur(
                         &url,
@@ -84,7 +84,7 @@ pub fn process(
                     ).map(|_| ());
                     Box::new(future)
                 }
-                _ => Box::new(future::ok(())) as Box<Future<Item = _, Error = _>>
+                _ => Box::new(future::ok(())) as TiemurFuture<_>
             }).collect()
         }
         _ => vec![Box::new(future::ok(()))]

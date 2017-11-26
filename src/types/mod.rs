@@ -8,6 +8,7 @@ use bincode::{serialize, deserialize, Infinite};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use sled::{Tree, TreeIter};
+use futures::Future;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ImageKey {
@@ -202,3 +203,5 @@ where
         }
     }
 }
+
+pub type TiemurFuture<T> = Box<Future<Item = T, Error = Error>>;
