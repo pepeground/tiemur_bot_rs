@@ -32,7 +32,7 @@ pub fn process(
     image_db: Rc<Tree>,
 ) -> Vec<TiemurFuture<()>> {
     let message_clone = message.clone();
-    response::insert_new_chat(message, &image_db, &user_db);
+    response::insert_new_chat(message, &user_db);
 
     match message.kind {
         MessageKind::Photo { ref data, .. } => {

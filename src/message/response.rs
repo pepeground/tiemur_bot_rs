@@ -13,12 +13,11 @@ use futures::{Future, IntoFuture, Stream};
 use image::load_from_memory;
 use sled::Tree;
 
-type ImageDB<'a> = TypedDB<'a, ImageKey, Option<ImageData>>;
+type ImageDB<'a> = TypedDB<'a, ImageKey, ImageData>;
 type UserDB<'a> = TypedDB<'a, UserKey, Option<UserData>>;
 
-pub fn insert_new_chat(message: &Message, image_db: &Tree, user_db: &Tree) {
+pub fn insert_new_chat(message: &Message, user_db: &Tree) {
     let chat_id = message.chat.id();
-    let _ = ImageDB::new(image_db).cas(&chat_id.into(), None, Some(&None));
     let _ = UserDB::new(user_db).cas(&chat_id.into(), None, Some(&None));
 }
 
@@ -59,14 +58,12 @@ fn find_tiemur(
 ) -> Result<(Rc<Message>, ImageData, UserData), Error> {
     let bytes = hash.bitv.to_bytes();
     let chat_id = message.chat.id();
-    let find = image_db
-        .scan(&chat_id.into())
-        .take_while(|&(ref key, ref _value)| key.chat_id == chat_id)
-        .find(|&(ref key, ref _value)| key.bytes == bytes);
+    let key = ImageKey::new(chat_id, bytes);
+    let find = image_db.get(&key);
     let telegram_user = message.from.clone().ok_or_else(|| "user empty".to_string())?;
     let user_id = telegram_user.id;
     match find {
-        Some((_key, Some(image))) => {
+        Some(image) => {
             let user_key = UserKey::new(chat_id, Some(user_id));
             let mut user_data: Option<UserData> = Some(telegram_user.into());
             user_data = match user_db.cas(&user_key, None, Some(&user_data)) {
@@ -79,10 +76,9 @@ fn find_tiemur(
             };
             Ok((message, image, user_data.unwrap()))
         }
-        Some((_, None)) | None => {
+        None => {
             let image = ImageData::new(message.id, user_id, message.date);
-            let key = ImageKey::new(chat_id, bytes);
-            image_db.set(&key, &Some(image));
+            image_db.set(&key, &image);
             Err("new record".to_string().into())
         }
     }
