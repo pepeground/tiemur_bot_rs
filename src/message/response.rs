@@ -4,28 +4,24 @@ use std::rc::Rc;
 use chrono::{DateTime, NaiveDateTime, Utc, Duration};
 use telegram_bot::{Api, CanReplySendMessage};
 use telegram_bot::types::{Chat, Message};
-use types::{ImageKey, ImageData, UserKey, UserData, TypedDB, Error, TiemurFuture};
+use types::{ImageKey, ImageData, UserKey, UserData, Error, TiemurFuture};
 use img_hash::{ImageHash, HashType};
 use hyper::Client;
 use hyper::error::UriError;
 use hyper_rustls::HttpsConnector;
 use futures::{Future, IntoFuture, Stream};
 use image::load_from_memory;
-use sled::Tree;
+use db::{IMAGE_DB, USER_DB};
 
-type ImageDB<'a> = TypedDB<'a, ImageKey, ImageData>;
-type UserDB<'a> = TypedDB<'a, UserKey, Option<UserData>>;
 
-pub fn insert_new_chat(message: &Message, user_db: &Tree) {
+pub fn insert_new_chat(message: &Message) {
     let chat_id = message.chat.id();
-    let _ = UserDB::new(user_db).cas(&chat_id.into(), None, Some(&None));
+    let _ = USER_DB.cas(&chat_id.into(), None, Some(&None));
 }
 
 pub fn detect_tiemur(
     url: &str,
     client: Client<HttpsConnector>,
-    image_db: Rc<Tree>,
-    user_db: Rc<Tree>,
     message: Rc<Message>,
     api: Api,
 ) -> TiemurFuture<Message> {
@@ -39,9 +35,7 @@ pub fn detect_tiemur(
             Ok(ImageHash::hash(image, 8, HashType::Gradient))
         })
         .and_then(move |ref hash| {
-            let image_db = ImageDB::new(&image_db);
-            let user_db = UserDB::new(&user_db);
-            find_tiemur(&user_db, &image_db, hash, message)
+            find_tiemur(hash, message)
         })
         .and_then(move |(ref message, ref image, ref user)| {
             let text = build(image, user, &message.chat);
@@ -51,25 +45,23 @@ pub fn detect_tiemur(
 }
 
 fn find_tiemur(
-    user_db: &UserDB,
-    image_db: &ImageDB,
     hash: &ImageHash,
     message: Rc<Message>,
 ) -> Result<(Rc<Message>, ImageData, UserData), Error> {
     let bytes = hash.bitv.to_bytes();
     let chat_id = message.chat.id();
     let key = ImageKey::new(chat_id, bytes);
-    let find = image_db.get(&key);
+    let find = IMAGE_DB.get(&key);
     let telegram_user = message.from.clone().ok_or_else(|| "user empty".to_string())?;
     let user_id = telegram_user.id;
     match find {
         Some(image) => {
             let user_key = UserKey::new(chat_id, Some(user_id));
             let mut user_data: Option<UserData> = Some(telegram_user.into());
-            user_data = match user_db.cas(&user_key, None, Some(&user_data)) {
+            user_data = match USER_DB.cas(&user_key, None, Some(&user_data)) {
                 Err(Some(Some(user_row))) => {
                     user_data.as_mut().unwrap().count = user_row.count + 1;
-                    user_db.set(&user_key, &user_data);
+                    USER_DB.set(&user_key, &user_data);
                     user_data
                 }
                 Ok(_) | Err(_) => user_data,
@@ -78,7 +70,7 @@ fn find_tiemur(
         }
         None => {
             let image = ImageData::new(message.id, user_id, message.date);
-            image_db.set(&key, &image);
+            IMAGE_DB.set(&key, &image);
             Err("new record".to_string().into())
         }
     }
@@ -138,10 +130,9 @@ fn distance_of_time_in_words(diff: Duration) -> String {
     }
 }
 
-pub fn top_tiemurs(user_db: &Tree, api: &Api, message: &Message) -> TiemurFuture<Message> {
-    let user_db = UserDB::new(user_db);
+pub fn top_tiemurs(api: &Api, message: &Message) -> TiemurFuture<Message> {
     let chat_id = message.chat.id();
-    let mut users: BinaryHeap<_> = user_db
+    let mut users: BinaryHeap<_> = USER_DB
         .scan(&chat_id.into())
         .take_while(|&(ref key, ref _value)| key.chat_id == chat_id)
         .map(|(_key, value)| value)

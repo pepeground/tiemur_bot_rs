@@ -18,6 +18,7 @@ log = "0.3"
 env_logger = "0.4"
 error-chain = "0.11"
 sled = "0.14"
+lazy_static = "0.2"
 
 [dependencies.telegram-bot]
 git = "https://github.com/jeizsm/telegram-bot.git"

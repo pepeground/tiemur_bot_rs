@@ -9,7 +9,6 @@ use futures::{Future, future};
 use hyper::Client;
 use hyper_rustls::HttpsConnector;
 use types::{TiemurFuture, Error};
-use sled::Tree;
 
 const EXTENSIONS: [&str; 9] = [
     ".jpg",
@@ -28,11 +27,9 @@ pub fn process(
     message: &Rc<Message>,
     api: Api,
     client: Client<HttpsConnector>,
-    user_db: Rc<Tree>,
-    image_db: Rc<Tree>,
 ) -> Vec<TiemurFuture<()>> {
     let message_clone = message.clone();
-    response::insert_new_chat(message, &user_db);
+    response::insert_new_chat(message);
 
     match message.kind {
         MessageKind::Photo { ref data, .. } => {
@@ -43,7 +40,7 @@ pub fn process(
                         .ok_or_else(|| "No file path".to_string().into())
                 })
                 .and_then(move |url| {
-                    response::detect_tiemur(&url, client, image_db, user_db, message_clone, api)
+                    response::detect_tiemur(&url, client, message_clone, api)
                 }).map(|_| ());
             vec![Box::new(future)]
         }
@@ -60,7 +57,7 @@ pub fn process(
                     match command.as_ref() {
                         "/tiemur_stats" |
                         "/tiemur_stats@TiemurBot" => {
-                            let future = response::top_tiemurs(&user_db, &api, message).map(|_| ()).from_err();
+                            let future = response::top_tiemurs(&api, message).map(|_| ()).from_err();
                             Box::new(future)
                         }
                         _ => Box::new(future::ok(())) as TiemurFuture<_>
@@ -77,8 +74,6 @@ pub fn process(
                     let future = response::detect_tiemur(
                         &url,
                         client.clone(),
-                        image_db.clone(),
-                        user_db.clone(),
                         message_clone.clone(),
                         api.clone(),
                     ).map(|_| ());
