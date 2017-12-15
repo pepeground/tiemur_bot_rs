@@ -32,6 +32,27 @@ impl From<ChatId> for ImageKey {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
+pub struct UrlKey {
+    pub chat_id: ChatId,
+    pub url: String,
+}
+
+impl UrlKey {
+    pub fn new(chat_id: ChatId, url: String) -> Self {
+        Self {
+            chat_id: chat_id,
+            url: url,
+        }
+    }
+}
+
+impl From<ChatId> for UrlKey {
+    fn from(chat_id: ChatId) -> Self {
+        Self::new(chat_id, String::new())
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug)]
 pub struct ImageData {
     pub id: MessageId,
     pub user_id: UserId,

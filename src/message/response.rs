@@ -44,14 +44,19 @@ pub fn detect_tiemur(
     Box::new(future)
 }
 
-fn find_tiemur(
-    hash: &ImageHash,
-    message: Rc<Message>,
-) -> Result<(Rc<Message>, ImageData, UserData), Error> {
+fn find() {
     let bytes = hash.bitv.to_bytes();
     let chat_id = message.chat.id();
     let key = ImageKey::new(chat_id, bytes);
     let find = IMAGE_DB.get(&key);
+}
+
+fn find_tiemur(
+    hash: &ImageHash,
+    message: Rc<Message>,
+) -> Result<(Rc<Message>, ImageData, UserData), Error> {
+    let chat_id = message.chat.id();
+    let key = ImageKey::new(chat_id, bytes);
     let telegram_user = message.from.clone().ok_or_else(|| "user empty".to_string())?;
     let user_id = telegram_user.id;
     match find {

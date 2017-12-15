@@ -47,7 +47,7 @@ fn main() {
         if let UpdateKind::Message(message) = update.kind {
             let rc_message = Rc::new(message);
             let process_message = message::process(
-                &rc_message,
+                message,
                 api.clone(),
                 client.clone(),
             );
