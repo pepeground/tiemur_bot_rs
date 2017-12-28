@@ -4,27 +4,47 @@ use std::rc::Rc;
 use chrono::{DateTime, NaiveDateTime, Utc, Duration};
 use telegram_bot::{Api, CanReplySendMessage};
 use telegram_bot::types::{Chat, Message};
-use types::{ImageKey, ImageData, UserKey, UserData, Error, TiemurFuture};
+use types::{ImageKey, ImageData, UserKey, UrlKey, UserData, Error, TiemurFuture};
 use img_hash::{ImageHash, HashType};
 use hyper::Client;
 use hyper::error::UriError;
 use hyper_rustls::HttpsConnector;
-use futures::{Future, IntoFuture, Stream};
+use futures::{Future, IntoFuture, Stream, future};
 use image::load_from_memory;
-use db::{IMAGE_DB, USER_DB};
+use db::{IMAGE_DB, USER_DB, URL_DB};
 
+const EXTENSIONS: [&str; 9] = [
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".gif",
+    ".bmp",
+    ".ico",
+    ".tiff",
+    ".webp",
+    ".ppm",
+];
 
 pub fn insert_new_chat(message: &Message) {
     let chat_id = message.chat.id();
     let _ = USER_DB.cas(&chat_id.into(), None, Some(&None));
 }
 
+#[cfg_attr(feature = "cargo-clippy", allow(clone_on_ref_ptr))]
 pub fn detect_tiemur(
     url: &str,
     client: Client<HttpsConnector>,
     message: Rc<Message>,
     api: Api,
-) -> TiemurFuture<Message> {
+) -> TiemurFuture<()> {
+    let result = find_tiemur(find_url(&message, url), message.clone());
+    if let Ok((message, image, user)) = result {
+        let text = build(&image, &user, &message.chat);
+        return Box::new(api.send(message.text_reply(text)).from_err().map(|_| ()));
+    }
+    if !EXTENSIONS.iter().any(|&a| url.ends_with(a)) {
+        return Box::new(future::ok(()));
+    }
     let future = url.parse()
         .map_err(|e: UriError| -> Error { e.into() })
         .into_future()
@@ -35,28 +55,41 @@ pub fn detect_tiemur(
             Ok(ImageHash::hash(image, 8, HashType::Gradient))
         })
         .and_then(move |ref hash| {
-            find_tiemur(hash, message)
+            find_tiemur(find_hash(&message, hash), message)
         })
         .and_then(move |(ref message, ref image, ref user)| {
             let text = build(image, user, &message.chat);
             api.send(message.text_reply(text)).from_err()
         });
-    Box::new(future)
+    Box::new(future.map(|_| ()))
 }
 
-fn find() {
+fn find_hash(message: &Message, hash: &ImageHash) -> Option<ImageData> {
     let bytes = hash.bitv.to_bytes();
     let chat_id = message.chat.id();
     let key = ImageKey::new(chat_id, bytes);
-    let find = IMAGE_DB.get(&key);
+
+    let telegram_user = message.from.clone()?;
+    let user_id = telegram_user.id;
+    let image = ImageData::new(message.id, user_id, message.date);
+    IMAGE_DB.cas(&key, None, Some(&image)).err().unwrap_or(None)
+}
+
+fn find_url(message: &Message, url: &str) -> Option<ImageData> {
+    let chat_id = message.chat.id();
+    let key = UrlKey::new(chat_id, url.to_string());
+
+    let telegram_user = message.from.clone()?;
+    let user_id = telegram_user.id;
+    let image = ImageData::new(message.id, user_id, message.date);
+    URL_DB.cas(&key, None, Some(&image)).err().unwrap_or(None)
 }
 
 fn find_tiemur(
-    hash: &ImageHash,
+    find: Option<ImageData>,
     message: Rc<Message>,
 ) -> Result<(Rc<Message>, ImageData, UserData), Error> {
     let chat_id = message.chat.id();
-    let key = ImageKey::new(chat_id, bytes);
     let telegram_user = message.from.clone().ok_or_else(|| "user empty".to_string())?;
     let user_id = telegram_user.id;
     match find {
@@ -74,8 +107,6 @@ fn find_tiemur(
             Ok((message, image, user_data.unwrap()))
         }
         None => {
-            let image = ImageData::new(message.id, user_id, message.date);
-            IMAGE_DB.set(&key, &image);
             Err("new record".to_string().into())
         }
     }

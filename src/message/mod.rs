@@ -10,18 +10,6 @@ use hyper::Client;
 use hyper_rustls::HttpsConnector;
 use types::{TiemurFuture, Error};
 
-const EXTENSIONS: [&str; 9] = [
-    ".jpg",
-    ".jpeg",
-    ".png",
-    ".gif",
-    ".bmp",
-    ".ico",
-    ".tiff",
-    ".webp",
-    ".ppm",
-];
-
 #[cfg_attr(feature = "cargo-clippy", allow(clone_on_ref_ptr))]
 pub fn process(
     message: &Rc<Message>,
@@ -68,9 +56,6 @@ pub fn process(
                         .skip(entity.offset as usize)
                         .take(entity.length as usize)
                         .collect::<String>();
-                    if !EXTENSIONS.iter().any(|&a| url.ends_with(a)) {
-                        return Box::new(future::ok(())) as TiemurFuture<_>;
-                    }
                     let future = response::detect_tiemur(
                         &url,
                         client.clone(),
