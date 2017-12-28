@@ -36,6 +36,9 @@ pub fn process(
             ref data,
             ref entities,
         } => {
+            if entities.is_empty() {
+                return vec![Box::new(future::ok(()))];
+            }
             entities.iter().map(|entity| match entity.kind {
                 MessageEntityKind::BotCommand => {
                     let command = data.chars()
