@@ -96,7 +96,7 @@ fn find_tiemur(
         Some(image) => {
             let user_key = UserKey::new(chat_id, Some(user_id));
             let mut user_data: Option<UserData> = Some(telegram_user.into());
-            user_data = match USER_DB.cas(&user_key, None, Some(&user_data)) {
+            let _ = match USER_DB.cas(&user_key, None, Some(&user_data)) {
                 Err(Some(Some(user_row))) => {
                     user_data.as_mut().unwrap().count = user_row.count + 1;
                     USER_DB.set(&user_key, &user_data);
@@ -104,7 +104,9 @@ fn find_tiemur(
                 }
                 Ok(_) | Err(_) => user_data,
             };
-            Ok((message, image, user_data.unwrap()))
+            let author_key = UserKey::new(chat_id, Some(image.user_id));
+            let author_data = USER_DB.get(&author_key);
+            Ok((message, image, author_data.unwrap().unwrap()))
         }
         None => {
             Err("new record".to_string().into())
