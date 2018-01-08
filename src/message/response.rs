@@ -12,6 +12,7 @@ use futures::{Future, Stream, future};
 use image::load_from_memory;
 use db::{IMAGE_DB, USER_DB, URL_DB};
 use bit_vec::BitVec;
+use config::CONFIG;
 
 const EXTENSIONS: [&str; 9] = [
     ".jpg",
@@ -76,7 +77,7 @@ fn find_hash(message: &Message, hash: &ImageHash) -> Option<ImageData> {
         let hash1 = ImageHash{bitv: BitVec::from_bytes(&key.bytes), hash_type: HashType::Gradient};
         let dist = hash.dist_ratio(&hash1);
         debug!("debug dist: {:?}", dist);
-        dist < 0.15
+        dist < CONFIG.dist_ratio
     });
     if find.is_none() {
         let bytes = hash.bitv.to_bytes();

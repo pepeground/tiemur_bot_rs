@@ -1,6 +1,5 @@
 mod response;
 
-use std::env;
 use std::rc::Rc;
 
 use telegram_bot::{Api, CanGetFile};
@@ -10,6 +9,7 @@ use hyper::{Uri, Client};
 // use hyper::error::UriError;
 use hyper_rustls::HttpsConnector;
 use types::{TiemurFuture, Error};
+use config::CONFIG;
 
 #[cfg_attr(feature = "cargo-clippy", allow(clone_on_ref_ptr))]
 pub fn process(
@@ -25,7 +25,7 @@ pub fn process(
             let future = api.send(data[0].get_file())
                 .map_err(|e| -> Error { e.into() })
                 .and_then(|file| {
-                    file.get_url(&env::var("TELEGRAM_TOKEN").unwrap())
+                    file.get_url(&CONFIG.telegram_token)
                         .ok_or_else(|| "No file path".to_string().into())
                 })
                 .and_then(|url| url.parse::<Uri>().map_err(|a| a.into()))

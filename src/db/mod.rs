@@ -1,4 +1,4 @@
-use std::env;
+use config::CONFIG;
 use types::{ImageKey, ImageData, UserKey, UserData, UrlKey, TypedDB};
 use sled::{Config, Tree};
 use std::path::Path;
@@ -8,7 +8,7 @@ type UrlDB<'a> = TypedDB<'a, UrlKey, ImageData>;
 type UserDB<'a> = TypedDB<'a, UserKey, Option<UserData>>;
 
 fn db_path(db_name: &str) -> String {
-    let path = Path::new(&env::var("SLED_DB_DIR").unwrap()).join(db_name);
+    let path = Path::new(&CONFIG.sled_db_dir).join(db_name);
     path.as_path().to_str().unwrap().to_string()
 }
 

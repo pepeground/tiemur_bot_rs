@@ -19,27 +19,29 @@ extern crate sled;
 #[macro_use]
 extern crate lazy_static;
 extern crate bit_vec;
+extern crate envy;
 
 mod message;
 pub mod types;
 pub mod db;
+pub mod config;
 
-use std::env;
 use futures::{Stream, Future, future};
 use tokio_core::reactor::Core;
 use telegram_bot::{Api, UpdateKind};
 use hyper::Client;
 use hyper_rustls::HttpsConnector;
 use std::rc::Rc;
+use config::CONFIG;
 
 #[cfg_attr(feature = "cargo-clippy", allow(clone_on_ref_ptr))]
 fn main() {
     env_logger::init().unwrap();
-    let token = env::var("TELEGRAM_TOKEN").unwrap();
+    let token = &CONFIG.telegram_token;
 
     let mut core = Core::new().unwrap();
     let handle = core.handle();
-    let api = Api::configure(token.as_str()).build(&handle);
+    let api = Api::configure(token).build(&handle);
     let client = Client::configure()
         .connector(HttpsConnector::new(4, &handle))
         .build(&handle);
