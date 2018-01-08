@@ -12,6 +12,7 @@ use hyper_rustls::HttpsConnector;
 use futures::{Future, IntoFuture, Stream, future};
 use image::load_from_memory;
 use db::{IMAGE_DB, USER_DB, URL_DB};
+use bit_vec::BitVec;
 
 const EXTENSIONS: [&str; 9] = [
     ".jpg",
@@ -28,6 +29,7 @@ const EXTENSIONS: [&str; 9] = [
 pub fn insert_new_chat(message: &Message) {
     let chat_id = message.chat.id();
     let _ = USER_DB.cas(&chat_id.into(), None, Some(&None));
+    let _ = IMAGE_DB.cas(&chat_id.into(), None, Some(&None));
 }
 
 #[cfg_attr(feature = "cargo-clippy", allow(clone_on_ref_ptr))]
@@ -38,11 +40,13 @@ pub fn detect_tiemur(
     api: Api,
 ) -> TiemurFuture<()> {
     let result = find_tiemur(find_url(&message, url), message.clone());
+    debug!("debug result: {:?}", result);
     if let Ok((message, image, user)) = result {
         let text = build(&image, &user, &message.chat);
         return Box::new(api.send(message.text_reply(text)).from_err().map(|_| ()));
     }
     if !EXTENSIONS.iter().any(|&a| url.ends_with(a)) {
+        debug!("debug url: {}", url);
         return Box::new(future::ok(()));
     }
     let future = url.parse()
@@ -55,6 +59,7 @@ pub fn detect_tiemur(
             Ok(ImageHash::hash(image, 8, HashType::Gradient))
         })
         .and_then(move |ref hash| {
+            debug!("debug hash: {:?}", hash);
             find_tiemur(find_hash(&message, hash), message)
         })
         .and_then(move |(ref message, ref image, ref user)| {
@@ -65,14 +70,24 @@ pub fn detect_tiemur(
 }
 
 fn find_hash(message: &Message, hash: &ImageHash) -> Option<ImageData> {
-    let bytes = hash.bitv.to_bytes();
     let chat_id = message.chat.id();
-    let key = ImageKey::new(chat_id, bytes);
 
     let telegram_user = message.from.clone()?;
     let user_id = telegram_user.id;
     let image = ImageData::new(message.id, user_id, message.date);
-    IMAGE_DB.cas(&key, None, Some(&image)).err().unwrap_or(None)
+    let find = IMAGE_DB.scan(&chat_id.into()).skip(1).find(|&(ref key, ref _value)| {
+        debug!("debug scan: {:?}", key);
+        let hash1 = ImageHash{bitv: BitVec::from_bytes(&key.bytes), hash_type: HashType::Gradient};
+        let dist = hash.dist_ratio(&hash1);
+        debug!("debug dist: {:?}", dist);
+        dist < 0.15
+    });
+    if find.is_none() {
+        let bytes = hash.bitv.to_bytes();
+        let key = ImageKey::new(chat_id, bytes);
+        IMAGE_DB.set(&key, &Some(image));
+    }
+    find.map(|a| a.1.unwrap())
 }
 
 fn find_url(message: &Message, url: &str) -> Option<ImageData> {
@@ -96,13 +111,12 @@ fn find_tiemur(
         Some(image) => {
             let user_key = UserKey::new(chat_id, Some(user_id));
             let mut user_data: Option<UserData> = Some(telegram_user.into());
-            let _ = match USER_DB.cas(&user_key, None, Some(&user_data)) {
+            match USER_DB.cas(&user_key, None, Some(&user_data)) {
                 Err(Some(Some(user_row))) => {
                     user_data.as_mut().unwrap().count = user_row.count + 1;
                     USER_DB.set(&user_key, &user_data);
-                    user_data
                 }
-                Ok(_) | Err(_) => user_data,
+                Ok(_) | Err(_) => (),
             };
             let author_key = UserKey::new(chat_id, Some(image.user_id));
             let author_data = USER_DB.get(&author_key);

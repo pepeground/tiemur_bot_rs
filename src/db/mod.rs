@@ -3,7 +3,7 @@ use types::{ImageKey, ImageData, UserKey, UserData, UrlKey, TypedDB};
 use sled::{Config, Tree};
 use std::path::Path;
 
-type ImageDB<'a> = TypedDB<'a, ImageKey, ImageData>;
+type ImageDB<'a> = TypedDB<'a, ImageKey, Option<ImageData>>;
 type UrlDB<'a> = TypedDB<'a, UrlKey, ImageData>;
 type UserDB<'a> = TypedDB<'a, UserKey, Option<UserData>>;
 

@@ -18,6 +18,7 @@ extern crate error_chain;
 extern crate sled;
 #[macro_use]
 extern crate lazy_static;
+extern crate bit_vec;
 
 mod message;
 pub mod types;
