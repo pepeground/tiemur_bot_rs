@@ -6,10 +6,9 @@ use telegram_bot::{Api, CanReplySendMessage};
 use telegram_bot::types::{Chat, Message};
 use types::{ImageKey, ImageData, UserKey, UrlKey, UserData, Error, TiemurFuture};
 use img_hash::{ImageHash, HashType};
-use hyper::Client;
-use hyper::error::UriError;
+use hyper::{Client, Uri};
 use hyper_rustls::HttpsConnector;
-use futures::{Future, IntoFuture, Stream, future};
+use futures::{Future, Stream, future};
 use image::load_from_memory;
 use db::{IMAGE_DB, USER_DB, URL_DB};
 use bit_vec::BitVec;
@@ -34,25 +33,22 @@ pub fn insert_new_chat(message: &Message) {
 
 #[cfg_attr(feature = "cargo-clippy", allow(clone_on_ref_ptr))]
 pub fn detect_tiemur(
-    url: &str,
+    url: Uri,
     client: Client<HttpsConnector>,
     message: Rc<Message>,
     api: Api,
 ) -> TiemurFuture<()> {
-    let result = find_tiemur(find_url(&message, url), message.clone());
+    let result = find_tiemur(find_url(&message, &url), message.clone());
     debug!("debug result: {:?}", result);
     if let Ok((message, image, user)) = result {
         let text = build(&image, &user, &message.chat);
         return Box::new(api.send(message.text_reply(text)).from_err().map(|_| ()));
     }
-    if !EXTENSIONS.iter().any(|&a| url.ends_with(a)) {
+    if !EXTENSIONS.iter().any(|&a| url.path().ends_with(a)) {
         debug!("debug url: {}", url);
         return Box::new(future::ok(()));
     }
-    let future = url.parse()
-        .map_err(|e: UriError| -> Error { e.into() })
-        .into_future()
-        .and_then(move |url| client.get(url).from_err())
+    let future = client.get(url).from_err()
         .and_then(|res| res.body().concat2().from_err())
         .and_then(|ref body| load_from_memory(body).map_err(From::from))
         .and_then(|ref image| {
@@ -90,9 +86,11 @@ fn find_hash(message: &Message, hash: &ImageHash) -> Option<ImageData> {
     find.map(|a| a.1.unwrap())
 }
 
-fn find_url(message: &Message, url: &str) -> Option<ImageData> {
+fn find_url(message: &Message, url: &Uri) -> Option<ImageData> {
     let chat_id = message.chat.id();
-    let key = UrlKey::new(chat_id, url.to_string());
+    let saved_url = [url.host().unwrap_or(""), url.path(), url.query().unwrap_or("")].concat();
+    debug!("debug saved url: {:?}", saved_url);
+    let key = UrlKey::new(chat_id, saved_url);
 
     let telegram_user = message.from.clone()?;
     let user_id = telegram_user.id;

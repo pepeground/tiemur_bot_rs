@@ -6,7 +6,8 @@ use std::rc::Rc;
 use telegram_bot::{Api, CanGetFile};
 use telegram_bot::types::{Message, MessageKind, MessageEntityKind};
 use futures::{Future, future};
-use hyper::Client;
+use hyper::{Uri, Client};
+// use hyper::error::UriError;
 use hyper_rustls::HttpsConnector;
 use types::{TiemurFuture, Error};
 
@@ -27,8 +28,9 @@ pub fn process(
                     file.get_url(&env::var("TELEGRAM_TOKEN").unwrap())
                         .ok_or_else(|| "No file path".to_string().into())
                 })
+                .and_then(|url| url.parse::<Uri>().map_err(|a| a.into()))
                 .and_then(move |url| {
-                    response::detect_tiemur(&url, client, message_clone, api)
+                    response::detect_tiemur(url, client, message_clone, api)
                 }).map(|_| ());
             vec![Box::new(future)]
         }
@@ -58,14 +60,22 @@ pub fn process(
                     let url = data.chars()
                         .skip(entity.offset as usize)
                         .take(entity.length as usize)
-                        .collect::<String>();
-                    let future = response::detect_tiemur(
-                        &url,
-                        client.clone(),
-                        message_clone.clone(),
-                        api.clone(),
-                    ).map(|_| ());
-                    Box::new(future)
+                        .collect::<String>().parse::<Uri>();
+                    match url {
+                        Ok(url) => {
+                            let future = response::detect_tiemur(
+                                url,
+                                client.clone(),
+                                message_clone.clone(),
+                                api.clone(),
+                            ).map(|_| ());
+                            Box::new(future) as TiemurFuture<_>
+                        }
+                        Err(err) => {
+                            let future = future::err(err.into());
+                            Box::new(future) as TiemurFuture<_>
+                        }
+                    }
                 }
                 _ => Box::new(future::ok(())) as TiemurFuture<_>
             }).collect()
