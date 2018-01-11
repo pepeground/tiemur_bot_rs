@@ -72,13 +72,15 @@ fn find_hash(message: &Message, hash: &ImageHash) -> Option<ImageData> {
     let telegram_user = message.from.clone()?;
     let user_id = telegram_user.id;
     let image = ImageData::new(message.id, user_id, message.date);
-    let find = IMAGE_DB.scan(&chat_id.into()).skip(1).find(|&(ref key, ref _value)| {
-        debug!("debug scan: {:?}", key);
-        let hash1 = ImageHash{bitv: BitVec::from_bytes(&key.bytes), hash_type: HashType::Gradient};
-        let dist = hash.dist_ratio(&hash1);
-        debug!("debug dist: {:?}", dist);
-        dist < CONFIG.dist_ratio
-    });
+    let find = IMAGE_DB.scan(&chat_id.into()).skip(1)
+        .take_while(|&(ref key, ref _value)| key.chat_id == chat_id)
+        .find(|&(ref key, ref _value)| {
+            debug!("debug scan: {:?}", key);
+            let hash1 = ImageHash{bitv: BitVec::from_bytes(&key.bytes), hash_type: HashType::Gradient};
+            let dist = hash.dist_ratio(&hash1);
+            debug!("debug dist: {:?}", dist);
+            dist < CONFIG.dist_ratio
+        });
     if find.is_none() {
         let bytes = hash.bitv.to_bytes();
         let key = ImageKey::new(chat_id, bytes);
@@ -104,7 +106,7 @@ fn find_tiemur(
     message: Rc<Message>,
 ) -> Result<(Rc<Message>, ImageData, UserData), Error> {
     let chat_id = message.chat.id();
-    let telegram_user = message.from.clone().ok_or_else(|| "user empty".to_string())?;
+    let telegram_user = message.from.clone().ok_or_else(|| "user empty")?;
     let user_id = telegram_user.id;
     match find {
         Some(image) => {
@@ -119,7 +121,7 @@ fn find_tiemur(
             };
             let author_key = UserKey::new(chat_id, Some(image.user_id));
             let author_data = USER_DB.get(&author_key);
-            Ok((message, image, author_data.unwrap().unwrap()))
+            Ok((message, image, author_data.ok_or_else(|| "author not found")?.ok_or_else(|| "author empty")?))
         }
         None => {
             Err("new record".to_string().into())
