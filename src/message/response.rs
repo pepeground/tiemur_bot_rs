@@ -110,6 +110,9 @@ fn find_tiemur(
     let user_id = telegram_user.id;
     match find {
         Some(image) => {
+            if image.user_id == user_id {
+                return Err("same author".to_string().into())
+            }
             let user_key = UserKey::new(chat_id, Some(user_id));
             let mut user_data: Option<UserData> = Some(telegram_user.into());
             match USER_DB.cas(&user_key, None, Some(&user_data)) {
